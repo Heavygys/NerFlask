@@ -184,18 +184,11 @@
                   <div class="modal-body">
                     <input type="hidden" name="event_id" value="{{ event.id }}" />
                     <div class="row g-3">
-                      <div class="col-md-6">
+                      <div class="col-md-12">
                         <label class="form-label">Expense Type</label>
                         <select class="form-select" name="expense_type" required>
                           <option value="">Select a type</option>
                           {% for expense_type in expense_types %}<option value="{{ expense_type }}">{{ expense_type }}</option>{% endfor %}
-                        </select>
-                      </div>
-                      <div class="col-md-6">
-                        <label class="form-label">Approved By</label>
-                        <select class="form-select" name="approved_by_user_id" required>
-                          <option value="">Select an approver</option>
-                          {% for approver in expense_approvers %}<option value="{{ approver.id }}">{{ approver.first_name or approver.email }} {{ approver.last_name or '' }} ({{ approver.role|title }})</option>{% endfor %}
                         </select>
                       </div>
                       <div class="col-md-4"><label class="form-label">Date</label><input type="date" class="form-control" name="expense_date" required /></div>
@@ -217,7 +210,7 @@
         {% if member.event_expenses %}
           <div class="table-responsive mt-2">
             <table class="table table-striped">
-              <thead class="table-light"><tr><th>Event</th><th>Type</th><th>Date</th><th>Amount</th><th>Approved By</th><th>Receipt</th></tr></thead>
+              <thead class="table-light"><tr><th>Event</th><th>Type</th><th>Date</th><th>Amount</th><th>Submitted By</th><th>Receipt</th></tr></thead>
               <tbody>{% for expense in member.event_expenses|sort(attribute='expense_date', reverse=true) %}<tr><td>{{ expense.event.name }}</td><td>{{ expense.expense_type }}</td><td>{{ expense.expense_date.strftime('%Y-%m-%d') }}</td><td>{{ '%.2f'|format(expense.amount) }}</td><td>{{ expense.approved_by.first_name or expense.approved_by.email }} {{ expense.approved_by.last_name or '' }}</td><td>{% if expense.receipt_image %}<a href="{{ url_for('static', filename=expense.receipt_image) }}" target="_blank">View</a>{% else %}—{% endif %}</td></tr>{% endfor %}</tbody>
             </table>
           </div>

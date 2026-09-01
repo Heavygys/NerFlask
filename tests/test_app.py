@@ -2,10 +2,11 @@ import io
 import os
 from datetime import date
 from decimal import Decimal
+from unittest.mock import patch
 
 os.environ["NERFLASK_DATABASE_URI"] = "sqlite:///northern_exposure_test.db"
 
-from app import Certification, Event, EventExpense, EventParticipation, LookupItem, Member, User, app, db
+from app import Certification, Event, EventExpense, EventParticipation, LookupItem, Member, User, app, db, get_event_participation
 
 
 app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
@@ -85,6 +86,80 @@ def test_event_month_navigator_links_to_calendar_months():
     no_w3w_response = client.get('/events?month=6&year=2026&selected_event_id=2')
     assert 'Tide Times' in no_w3w_response.get_data(as_text=True)
     assert 'id="w3wLocationFrame"' not in no_w3w_response.get_data(as_text=True)
+
+
+def test_member_can_unsubscribe_from_event():
+    with app.app_context():
+        user = User(email='unsubscribe@example.com', first_name='Unsub', last_name='Member', role='member')
+        user.set_password('Password123!')
+        event = Event(name='Unsubscribe Test', date_from=date(2026, 8, 10))
+        db.session.add_all([user, event])
+        db.session.commit()
+        event_id = event.id
+
+    client = app.test_client()
+    client.post('/login', data={'email': 'unsubscribe@example.com', 'password': 'Password123!'})
+    join_response = client.post(f'/event/{event_id}/join', follow_redirects=True)
+    assert 'You have joined Unsubscribe Test.' in join_response.get_data(as_text=True)
+    assert 'Unsubscribe' in join_response.get_data(as_text=True)
+
+    unsubscribe_response = client.post(f'/event/{event_id}/unsubscribe', follow_redirects=True)
+    assert 'You have unsubscribed from Unsubscribe Test.' in unsubscribe_response.get_data(as_text=True)
+    assert 'Join This Event' in unsubscribe_response.get_data(as_text=True)
+    with app.app_context():
+        member = Member.query.filter_by(email='unsubscribe@example.com').one()
+        event = db.session.get(Event, event_id)
+        assert member not in event.members
+        assert get_event_participation(event_id, member.id) is None
+
+
+def test_event_tides_are_cached_on_create_and_refresh_without_page_fetch():
+    with app.app_context():
+        admin = User(email='tides-admin@example.com', role='admin')
+        admin.set_password('Password123!')
+        db.session.add(admin)
+        db.session.commit()
+
+    client = app.test_client()
+    client.post('/login', data={'email': 'tides-admin@example.com', 'password': 'Password123!'})
+    cached_tides = {'station': 'Harbour', 'extremes': [{'type': 'High', 'time': '08:15', 'height': 3.2}]}
+
+    with patch('app.get_event_tides', return_value=(cached_tides, None)) as fetch_tides:
+        response = client.post('/events/new', data={
+            'name': 'Tide Training',
+            'date_from': '2026-07-14',
+            'latitude': '54.9783',
+            'longitude': '-1.6178',
+        })
+
+    assert response.status_code == 302
+    assert fetch_tides.call_count == 1
+    with app.app_context():
+        event = Event.query.filter_by(name='Tide Training').one()
+        assert event.tide_data == cached_tides
+        event_id = event.id
+
+    refreshed_tides = {'station': 'Harbour', 'extremes': [{'type': 'Low', 'time': '14:40', 'height': 0.8}]}
+    with patch('app.get_event_tides', return_value=(refreshed_tides, None)) as fetch_tides:
+        response = client.post(f'/event/{event_id}/edit', data={
+            'name': 'Tide Training',
+            'date_from': '2026-07-15',
+            'latitude': '54.9783',
+            'longitude': '-1.6178',
+        })
+
+    assert response.status_code == 302
+    assert fetch_tides.call_count == 1
+    with app.app_context():
+        event = db.session.get(Event, event_id)
+        assert event.tide_data == refreshed_tides
+
+    with patch('app.get_event_tides', side_effect=AssertionError('page render fetched tides')):
+        response = client.get(f'/events?selected_event_id={event_id}')
+
+    assert response.status_code == 200
+    assert 'Harbour' in response.get_data(as_text=True)
+    assert '14:40' in response.get_data(as_text=True)
 
 
 def test_signup_success_and_failure_messages():
@@ -237,6 +312,8 @@ def test_add_event_expense_for_assigned_member_with_receipt():
     approved_member_page = client.get(f'/member/{member_id}')
     assert f'expenseModal{event_id}' in approved_member_page.get_data(as_text=True)
     assert 'Add Expense: Training Day' in approved_member_page.get_data(as_text=True)
+    assert 'Select a reviewer' not in approved_member_page.get_data(as_text=True)
+    assert 'Approved By' not in approved_member_page.get_data(as_text=True)
     response = client.post(
         f'/member/{member_id}/expenses/add',
         data={
@@ -244,7 +321,6 @@ def test_add_event_expense_for_assigned_member_with_receipt():
             'expense_type': 'Vehicle Fuel',
             'expense_date': '2026-09-01',
             'amount': '42.50',
-            'approved_by_user_id': str(staff_id),
             'receipt_image': (io.BytesIO(b'image-data'), 'receipt.png'),
         },
         content_type='multipart/form-data',
@@ -257,7 +333,8 @@ def test_add_event_expense_for_assigned_member_with_receipt():
         expense = EventExpense.query.filter_by(member_id=member_id, event_id=event_id).one()
         assert expense.expense_type == 'Vehicle Fuel'
         assert expense.amount == Decimal('42.50')
-        assert expense.approved_by_user_id == staff_id
+        assert expense.approved_by_user_id != staff_id
+        assert expense.status == 'Pending'
         assert expense.receipt_image.endswith('.png')
         expense_id = expense.id
 
@@ -275,12 +352,18 @@ def test_add_event_expense_for_assigned_member_with_receipt():
     assert 'Expense approved successfully.' in approve_response.get_data(as_text=True)
     pay_response = client.post(f'/expense/{expense_id}/pay', follow_redirects=True)
     assert 'Expense marked as paid successfully.' in pay_response.get_data(as_text=True)
+    undo_paid_response = client.post(f'/expense/{expense_id}/undo_paid', follow_redirects=True)
+    assert 'Paid status removed. The expense is approved again.' in undo_paid_response.get_data(as_text=True)
+    undo_approved_response = client.post(f'/expense/{expense_id}/undo_approved', follow_redirects=True)
+    assert 'Approval removed. The expense is pending again.' in undo_approved_response.get_data(as_text=True)
     print_response = client.get(f'/expenses/{event_id}/print')
     assert print_response.status_code == 200
     assert 'Expense Review' in print_response.get_data(as_text=True)
 
     with app.app_context():
         expense = db.session.get(EventExpense, expense_id)
-        assert expense.status == 'Paid'
-        assert expense.reviewed_by_user_id == admin_id
-        assert expense.paid_by_user_id == admin_id
+        assert expense.status == 'Pending'
+        assert expense.reviewed_by_user_id is None
+        assert expense.reviewed_at is None
+        assert expense.paid_by_user_id is None
+        assert expense.paid_at is None

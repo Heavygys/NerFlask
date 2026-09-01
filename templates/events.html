@@ -150,7 +150,12 @@
                       <button type="submit" class="btn btn-success w-100">Join This Event</button>
                     </form>
                   {% else %}
-                    <span class="badge text-bg-success">Joined</span>
+                    <div class="d-flex align-items-center gap-2">
+                      <span class="badge text-bg-success">Joined</span>
+                      <form method="POST" action="{{ url_for('unsubscribe_from_event', event_id=selected_event.id) }}">
+                        <button type="submit" class="btn btn-outline-danger btn-sm">Unsubscribe</button>
+                      </form>
+                    </div>
                   {% endif %}
                 {% endif %}
               </div>

@@ -128,6 +128,8 @@ class Event(db.Model):
     what3words_location_3 = db.Column(db.String(120), nullable=True)
     latitude = db.Column(db.Float, nullable=True)
     longitude = db.Column(db.Float, nullable=True)
+    tide_data = db.Column(db.JSON, nullable=True)
+    tide_error = db.Column(db.String(255), nullable=True)
 
 
 class EventExpense(db.Model):
@@ -264,6 +266,10 @@ def get_event_tides(event):
         extremes.append({"type": extreme.get("type", "").title(), "time": time, "height": height})
 
     return {"station": station.get("name", "Nearest station"), "extremes": extremes}, None
+
+
+def refresh_event_tides(event):
+    event.tide_data, event.tide_error = get_event_tides(event)
 
 
 def ensure_member_for_user(user):
@@ -474,6 +480,8 @@ def ensure_database_schema():
                 "what3words_location_3": "VARCHAR(120)",
                 "latitude": "FLOAT",
                 "longitude": "FLOAT",
+                "tide_data": "JSON",
+                "tide_error": "VARCHAR(255)",
             }.items():
                 if column_name not in event_names:
                     db.session.execute(text(f"ALTER TABLE event ADD COLUMN {column_name} {column_type}"))
@@ -1011,7 +1019,8 @@ def create_app():
             selected_event_participations = {
                 participation.member_id: participation for participation in selected_event.participations
             }
-        tide_data, tide_error = get_event_tides(selected_event) if selected_event else (None, None)
+        tide_data = selected_event.tide_data if selected_event else None
+        tide_error = selected_event.tide_error if selected_event else None
 
         current_member = None
         if session.get("role") == "member":
@@ -1149,6 +1158,7 @@ def create_app():
 
     @app.route("/event/<int:event_id>/join", methods=["POST"])
     @login_required
+    @role_required("member")
     def join_event(event_id):
         event = Event.query.get_or_404(event_id)
         user = User.query.get(session.get("user_id"))
@@ -1169,6 +1179,26 @@ def create_app():
         else:
             flash("You are already registered for this event.")
 
+        return redirect(url_for("events"))
+
+    @app.route("/event/<int:event_id>/unsubscribe", methods=["POST"])
+    @login_required
+    @role_required("member")
+    def unsubscribe_from_event(event_id):
+        event = Event.query.get_or_404(event_id)
+        user = User.query.get(session.get("user_id"))
+        member = ensure_member_for_user(user)
+
+        if not member or member not in event.members:
+            flash("You are not registered for this event.")
+            return redirect(url_for("events"))
+
+        event.members.remove(member)
+        participation = get_event_participation(event.id, member.id)
+        if participation:
+            db.session.delete(participation)
+        db.session.commit()
+        flash(f"You have unsubscribed from {event.name}.")
         return redirect(url_for("events"))
 
     @app.route("/events/new", methods=["GET", "POST"])
@@ -1217,6 +1247,7 @@ def create_app():
                 if linked_member:
                     event.members.append(linked_member)
 
+            refresh_event_tides(event)
             db.session.commit()
             flash("Event created successfully.")
             return redirect(url_for("events"))
@@ -1266,6 +1297,7 @@ def create_app():
             event.what3words_location_3 = what3words_locations[2]
             event.latitude = latitude
             event.longitude = longitude
+            refresh_event_tides(event)
 
             event.members.clear()
             selected_member_id_set = {int(member_id_value) for member_id_value in selected_member_ids}
@@ -1379,7 +1411,6 @@ def create_app():
             current_role=session.get("role"),
             cert_statuses=get_lookup_values("certification_status"),
             expense_types=get_lookup_values("expense_type"),
-            expense_approvers=User.query.filter(User.role.in_(("admin", "staff"))).order_by(User.last_name, User.first_name, User.email).all(),
         )
 
     @app.route("/member/<int:member_id>/edit", methods=["GET", "POST"])
@@ -1469,11 +1500,9 @@ def create_app():
         expense_type = request.form.get("expense_type", "").strip()
         expense_date = request.form.get("expense_date", "")
         amount_value = request.form.get("amount", "").strip()
-        approved_by_user_id = request.form.get("approved_by_user_id", type=int)
         receipt_file = request.files.get("receipt_image")
 
         event = Event.query.get(event_id) if event_id else None
-        approver = User.query.get(approved_by_user_id) if approved_by_user_id else None
         if not event or member not in event.members:
             flash("Please select an event this member is assigned to.")
             return redirect(url_for("member_detail", member_id=member.id))
@@ -1484,8 +1513,8 @@ def create_app():
         if expense_type not in get_lookup_values("expense_type"):
             flash("Please select a valid expense type.")
             return redirect(redirect_url)
-        if not approver or approver.role not in {"admin", "staff"}:
-            flash("Please select a valid admin or staff approver.")
+        if not submitting_user:
+            flash("Your account could not be found.")
             return redirect(redirect_url)
 
         try:
@@ -1517,8 +1546,9 @@ def create_app():
             expense_type=expense_type,
             expense_date=parsed_date,
             amount=amount,
-            approved_by_user_id=approver.id,
+            approved_by_user_id=submitting_user.id,
             receipt_image=receipt_path,
+            status="Pending",
         ))
         db.session.commit()
         flash("Event expense added successfully.")
@@ -1608,6 +1638,16 @@ def create_app():
             expense.paid_by_user_id = admin.id
             expense.paid_at = datetime.utcnow()
             flash("Expense marked as paid successfully.")
+        elif action == "undo_paid" and expense.status == "Paid":
+            expense.status = "Approved"
+            expense.paid_by_user_id = None
+            expense.paid_at = None
+            flash("Paid status removed. The expense is approved again.")
+        elif action == "undo_approved" and expense.status == "Approved":
+            expense.status = "Pending"
+            expense.reviewed_by_user_id = None
+            expense.reviewed_at = None
+            flash("Approval removed. The expense is pending again.")
         else:
             flash("That expense status change is not allowed.")
         db.session.commit()
