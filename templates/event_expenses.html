@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+
+{% block title %}Event Expenses{% endblock %}
+
+{% block content %}
+<section class="card shadow-sm border-0">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+      <div><h1 class="h3 mb-1">Event Expenses</h1><p class="text-muted mb-0">Review submitted expenses by event.</p></div>
+      {% if review %}<a href="{{ url_for('print_event_expenses', event_id=review[0].id) }}" target="_blank" class="btn btn-outline-primary">Print Review</a>{% endif %}
+    </div>
+    <form method="GET" class="row g-2 mb-4">
+      <div class="col-md-6"><select class="form-select" name="event_id" onchange="this.form.submit()"><option value="">Select an event</option>{% for event in event_list %}<option value="{{ event.id }}" {% if review and review[0].id == event.id %}selected{% endif %}>{{ event.date_from.strftime('%Y-%m-%d') }} - {{ event.name }}</option>{% endfor %}</select></div>
+    </form>
+    {% if review %}
+      {% set event, expenses, totals_by_type, total_amount = review %}
+      <div class="row g-3 mb-4">
+        <div class="col-lg-4"><div class="expense-total"><span>Event total</span><strong>{{ '%.2f'|format(total_amount) }}</strong></div></div>
+        {% for expense_type, total in totals_by_type %}<div class="col-md-4 col-lg-3"><div class="expense-total"><span>{{ expense_type }}</span><strong>{{ '%.2f'|format(total) }}</strong></div></div>{% endfor %}
+      </div>
+      {% if expenses %}
+        <div class="table-responsive"><table class="table table-striped align-middle"><thead class="table-light"><tr><th>Date</th><th>Member</th><th>Type</th><th>Amount</th><th>Receipt</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+          {% for expense in expenses %}<tr><td>{{ expense.expense_date.strftime('%Y-%m-%d') }}</td><td>{{ expense.member.first_name }} {{ expense.member.last_name }}</td><td>{{ expense.expense_type }}</td><td>{{ '%.2f'|format(expense.amount) }}</td><td><a href="{{ url_for('static', filename=expense.receipt_image) }}" target="_blank">View</a></td><td><span class="badge {% if expense.status == 'Paid' %}text-bg-success{% elif expense.status == 'Approved' %}text-bg-primary{% else %}text-bg-warning{% endif %}">{{ expense.status }}</span></td><td>{% if current_role == 'admin' and expense.status == 'Pending' %}<form method="POST" action="{{ url_for('update_event_expense_status', expense_id=expense.id, action='approve') }}"><button class="btn btn-outline-primary btn-sm">Approve</button></form>{% elif current_role == 'admin' and expense.status == 'Approved' %}<form method="POST" action="{{ url_for('update_event_expense_status', expense_id=expense.id, action='pay') }}"><button class="btn btn-success btn-sm">Mark Paid</button></form>{% else %}—{% endif %}</td></tr>{% endfor %}
+        </tbody></table></div>
+      {% else %}<p class="text-muted mb-0">No expenses have been submitted for this event.</p>{% endif %}
+    {% else %}<p class="text-muted mb-0">No events have been created yet.</p>{% endif %}
+  </div>
+</section>
+{% endblock %}

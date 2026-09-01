@@ -1,0 +1,23 @@
+<div class="tide-times-panel h-100">
+  <h3 class="h6 text-uppercase mb-1">Tide Times</h3>
+  {% if tide_data %}
+    <p class="small text-muted mb-3">{{ selected_event.date_from.strftime('%d %B %Y') }} | {{ tide_data.station }}</p>
+    {% if tide_data.extremes %}
+      <div class="table-responsive">
+        <table class="table table-sm mb-2">
+          <thead><tr><th>Tide</th><th>Time</th><th>Height</th></tr></thead>
+          <tbody>
+            {% for extreme in tide_data.extremes %}
+              <tr><td>{{ extreme.type }}</td><td>{{ extreme.time }}</td><td>{{ '%.2f'|format(extreme.height) }} m</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="small mb-2">No tide extremes are available for this date.</p>
+    {% endif %}
+    <p class="small text-muted mb-0">TideCheck predictions are for planning only and are not suitable for navigation.</p>
+  {% else %}
+    <p class="small mb-0">{{ tide_error }}</p>
+  {% endif %}
+</div>

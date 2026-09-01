@@ -1,0 +1,286 @@
+import io
+import os
+from datetime import date
+from decimal import Decimal
+
+os.environ["NERFLASK_DATABASE_URI"] = "sqlite:///northern_exposure_test.db"
+
+from app import Certification, Event, EventExpense, EventParticipation, LookupItem, Member, User, app, db
+
+
+app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
+
+
+def setup_function():
+    with app.app_context():
+        db.drop_all()
+        db.create_all()
+        member = Member(
+            first_name="Alice",
+            last_name="Brown",
+            email="alice@example.com",
+            membership_type="Premier",
+            status="Active",
+        )
+        db.session.add(member)
+        db.session.commit()
+
+
+def test_login_required_redirect():
+    client = app.test_client()
+    response = client.get('/')
+    assert response.status_code == 302
+    assert '/login' in response.headers['Location']
+
+
+def test_login_clears_stale_member_session():
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session['user_id'] = 999999
+        session['username'] = 'removed-member@example.com'
+        session['role'] = 'member'
+
+    response = client.get('/login', follow_redirects=True)
+    assert response.status_code == 200
+    assert 'Login' in response.get_data(as_text=True)
+
+
+def test_event_month_navigator_links_to_calendar_months():
+    with app.app_context():
+        admin = User(email='events-admin@example.com', role='admin')
+        admin.set_password('Password123!')
+        db.session.add_all([
+            admin,
+            Event(
+                name='Spring Training',
+                date_from=date(2026, 3, 15),
+                what3words_location_1='filled.count.soap',
+            ),
+            Event(
+                name='Summer Regatta',
+                date_from=date(2026, 6, 20),
+                latitude=54.9783,
+                longitude=-1.6178,
+            ),
+        ])
+        db.session.commit()
+
+    client = app.test_client()
+    client.post('/login', data={'email': 'events-admin@example.com', 'password': 'Password123!'})
+    response = client.get('/events?month=3&year=2026')
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert 'Event Months' in html
+    assert 'March 2026' in html
+    assert 'June 2026' in html
+    assert 'month=6&amp;year=2026' in html
+    assert 'Summer Regatta' in html
+    assert 'Event Locations' in html
+    assert '///filled.count.soap' in html
+    assert 'data-w3w-url="https://what3words.com/filled.count.soap"' in html
+    assert 'id="w3wLocationFrame"' in html
+    assert 'Location 1:' not in html
+
+    no_w3w_response = client.get('/events?month=6&year=2026&selected_event_id=2')
+    assert 'Tide Times' in no_w3w_response.get_data(as_text=True)
+    assert 'id="w3wLocationFrame"' not in no_w3w_response.get_data(as_text=True)
+
+
+def test_signup_success_and_failure_messages():
+    client = app.test_client()
+
+    success_response = client.post('/signup', data={
+        'first_name': 'New',
+        'last_name': 'User',
+        'email': 'newuser@example.com',
+        'password': 'Password123!',
+        'confirm_password': 'Password123!',
+    }, follow_redirects=True)
+    assert success_response.status_code == 200
+    assert 'Account created successfully.' in success_response.get_data(as_text=True)
+
+    weak_password_response = client.post('/signup', data={
+        'first_name': 'Weak',
+        'last_name': 'Password',
+        'email': 'weak@example.com',
+        'password': 'weak',
+        'confirm_password': 'weak',
+    }, follow_redirects=True)
+    assert weak_password_response.status_code == 200
+    assert 'password must be at least 8 characters' in weak_password_response.get_data(as_text=True).lower()
+
+    fail_response = client.post('/signup', data={
+        'first_name': 'Duplicate',
+        'last_name': 'User',
+        'email': 'newuser@example.com',
+        'password': 'Password123!',
+        'confirm_password': 'Password123!',
+    }, follow_redirects=True)
+    assert fail_response.status_code == 200
+    assert 'Account creation failed: that email is already registered.' in fail_response.get_data(as_text=True)
+
+
+def test_admin_login_and_search_filter():
+    client = app.test_client()
+    client.post('/login', data={'email': 'admin@noreply.local', 'password': 'admin123'}, follow_redirects=True)
+
+    response = client.get('/?q=alice&status=Active&membership_type=Premier')
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert 'Alice Brown' in html
+
+
+def test_edit_and_delete_member():
+    client = app.test_client()
+    client.post('/login', data={'email': 'admin@noreply.local', 'password': 'admin123'})
+
+    member = Member.query.filter_by(email='alice@example.com').first()
+    response = client.post(f'/member/{member.id}/edit', data={
+        'first_name': 'Alicia',
+        'last_name': 'Brown',
+        'email': 'alice@example.com',
+        'phone': '555-1111',
+        'membership_type': 'Family',
+        'status': 'Inactive',
+        'notes': 'Updated profile'
+    }, follow_redirects=True)
+    assert response.status_code == 200
+    assert 'Alicia Brown' in response.get_data(as_text=True)
+
+    delete_response = client.post(f'/member/{member.id}/delete', follow_redirects=True)
+    assert delete_response.status_code == 200
+    assert Member.query.filter_by(email='alice@example.com').count() == 0
+
+
+def test_add_certification_with_db_qualification_and_upload():
+    client = app.test_client()
+    client.post('/login', data={'email': 'admin@noreply.local', 'password': 'admin123'})
+
+    member = Member.query.filter_by(email='alice@example.com').first()
+    response = client.post(
+        f'/member/{member.id}/certification/add',
+        data={
+            'name': 'RYA Powerboat Level 2',
+            'certification_number': 'PB-100',
+            'issue_date': '2024-01-15',
+            'expiry_date': '2028-01-15',
+            'status': 'Valid',
+            'certificate_copy': (io.BytesIO(b'certificate-data'), 'certificate.pdf'),
+        },
+        content_type='multipart/form-data',
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert 'Certificate added successfully.' in response.get_data(as_text=True)
+
+    certification = Certification.query.filter_by(member_id=member.id).first()
+    assert certification is not None
+    assert certification.name == 'RYA Powerboat Level 2'
+    assert certification.certificate_copy
+    assert certification.certificate_copy.endswith('.pdf')
+
+
+def test_add_event_expense_for_assigned_member_with_receipt():
+    with app.app_context():
+        member = Member.query.filter_by(email='alice@example.com').first()
+        member_user = User(email='alice@example.com', role='member')
+        member_user.set_password('Password123!')
+        admin = User(email='expense-admin@example.com', role='admin')
+        admin.set_password('Password123!')
+        staff = User(email='expense-staff@example.com', role='staff')
+        staff.set_password('Password123!')
+        event = Event(name='Training Day', date_from=date(2026, 9, 1))
+        event.members.append(member)
+        db.session.add_all([
+            member_user,
+            admin,
+            staff,
+            event,
+            EventParticipation(event=event, member=member),
+            LookupItem(category='expense_type', value='Vehicle Fuel'),
+        ])
+        db.session.commit()
+        member_id = member.id
+        event_id = event.id
+        staff_id = staff.id
+        admin_id = admin.id
+
+    client = app.test_client()
+    client.post('/login', data={'email': 'alice@example.com', 'password': 'Password123!'})
+    member_page = client.get(f'/member/{member_id}')
+    assert 'Pending approval' in member_page.get_data(as_text=True)
+    assert f'expenseModal{event_id}' not in member_page.get_data(as_text=True)
+    pending_response = client.post(
+        f'/member/{member_id}/expenses/add',
+        data={
+            'event_id': str(event_id),
+            'expense_type': 'Vehicle Fuel',
+            'expense_date': '2026-09-01',
+            'amount': '42.50',
+            'approved_by_user_id': str(staff_id),
+            'receipt_image': (io.BytesIO(b'image-data'), 'receipt.png'),
+        },
+        content_type='multipart/form-data',
+        follow_redirects=True,
+    )
+    assert 'participation must be approved' in pending_response.get_data(as_text=True).lower()
+
+    client.get('/logout')
+    client.post('/login', data={'email': 'expense-staff@example.com', 'password': 'Password123!'})
+    approval_response = client.post(f'/event/{event_id}/member/{member_id}/approve', follow_redirects=True)
+    assert 'is approved for Training Day.' in approval_response.get_data(as_text=True)
+
+    client.get('/logout')
+    client.post('/login', data={'email': 'alice@example.com', 'password': 'Password123!'})
+    approved_member_page = client.get(f'/member/{member_id}')
+    assert f'expenseModal{event_id}' in approved_member_page.get_data(as_text=True)
+    assert 'Add Expense: Training Day' in approved_member_page.get_data(as_text=True)
+    response = client.post(
+        f'/member/{member_id}/expenses/add',
+        data={
+            'event_id': str(event_id),
+            'expense_type': 'Vehicle Fuel',
+            'expense_date': '2026-09-01',
+            'amount': '42.50',
+            'approved_by_user_id': str(staff_id),
+            'receipt_image': (io.BytesIO(b'image-data'), 'receipt.png'),
+        },
+        content_type='multipart/form-data',
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert 'Event expense added successfully.' in response.get_data(as_text=True)
+    with app.app_context():
+        expense = EventExpense.query.filter_by(member_id=member_id, event_id=event_id).one()
+        assert expense.expense_type == 'Vehicle Fuel'
+        assert expense.amount == Decimal('42.50')
+        assert expense.approved_by_user_id == staff_id
+        assert expense.receipt_image.endswith('.png')
+        expense_id = expense.id
+
+    client.get('/logout')
+    client.post('/login', data={'email': 'expense-staff@example.com', 'password': 'Password123!'})
+    staff_review = client.get(f'/expenses?event_id={event_id}')
+    assert staff_review.status_code == 200
+    assert 'Event Expenses' in staff_review.get_data(as_text=True)
+    assert 'Vehicle Fuel' in staff_review.get_data(as_text=True)
+    assert '42.50' in staff_review.get_data(as_text=True)
+
+    client.get('/logout')
+    client.post('/login', data={'email': 'expense-admin@example.com', 'password': 'Password123!'})
+    approve_response = client.post(f'/expense/{expense_id}/approve', follow_redirects=True)
+    assert 'Expense approved successfully.' in approve_response.get_data(as_text=True)
+    pay_response = client.post(f'/expense/{expense_id}/pay', follow_redirects=True)
+    assert 'Expense marked as paid successfully.' in pay_response.get_data(as_text=True)
+    print_response = client.get(f'/expenses/{event_id}/print')
+    assert print_response.status_code == 200
+    assert 'Expense Review' in print_response.get_data(as_text=True)
+
+    with app.app_context():
+        expense = db.session.get(EventExpense, expense_id)
+        assert expense.status == 'Paid'
+        assert expense.reviewed_by_user_id == admin_id
+        assert expense.paid_by_user_id == admin_id

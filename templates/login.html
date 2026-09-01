@@ -1,0 +1,213 @@
+{% extends 'base.html' %}
+
+{% block title %}Welcome{% endblock %}
+
+{% block content %}
+<div class="row g-4 justify-content-center mt-4">
+  <div class="col-lg-5">
+    <section class="card shadow-sm border-0 h-100">
+      <div class="card-body p-4">
+        <h1 class="h3 mb-3">Login</h1>
+        <form method="POST" action="{{ url_for('login') }}">
+          <div class="welcome-header mb-3">
+            <div class="small text-uppercase fw-semibold text-primary mb-1">Member access</div>
+            <h1 class="h3 mb-0">Welcome back</h1>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Email address</label>
+            <input type="email" class="form-control" name="email" required />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Password</label>
+            <div class="input-group">
+              <input type="password" class="form-control password-input" name="password" id="login-password" required minlength="8" />
+              <button class="btn btn-outline-secondary toggle-password" type="button" data-target="login-password">Show</button>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary w-100 mb-2">Login</button>
+          <div class="d-grid gap-2 mt-3">
+            <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#signupModal">Create account</button>
+          </div>
+          <div class="text-center mt-3">
+            <a href="{{ url_for('forgot_password') }}" class="small">Forgot password?</a>
+          </div>
+        </form>
+
+        <hr class="my-4" />
+
+        <div class="d-grid gap-2">
+          <a href="{{ url_for('oauth_login', provider='google') }}" class="btn btn-outline-primary">Continue with Google</a>
+          <a href="{{ url_for('oauth_login', provider='github') }}" class="btn btn-outline-secondary">Continue with GitHub</a>
+          <a href="{{ url_for('oauth_login', provider='microsoft') }}" class="btn btn-outline-dark">Continue with Microsoft</a>
+        </div>
+
+        <div class="mt-4 small text-muted">
+          Demo accounts:<br />
+          Admin email: <strong>admin@noreply.local</strong> / password <strong>admin123</strong><br />
+          Staff email: <strong>staff@noreply.local</strong> / password <strong>staff123</strong>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="modal fade" id="signupModal" tabindex="-1" aria-labelledby="signupModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-2">
+        <div>
+          <div class="small text-uppercase fw-semibold text-primary">New member</div>
+          <h2 class="modal-title h5 mb-0" id="signupModalLabel">Create account</h2>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body pt-2">
+        <form method="POST" action="{{ url_for('signup') }}">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">First name</label>
+              <input type="text" class="form-control" name="first_name" required />
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Last name</label>
+              <input type="text" class="form-control" name="last_name" required />
+            </div>
+            <div class="col-12">
+              <label class="form-label">Email address</label>
+              <input type="email" class="form-control" name="email" id="signup-email" required />
+            </div>
+            <div class="col-12">
+              <label class="form-label">Password</label>
+              <div class="input-group">
+                <input type="password" class="form-control password-input" name="password" id="signup-password" required minlength="8" />
+                <button class="btn btn-outline-secondary toggle-password" type="button" data-target="signup-password">Show</button>
+              </div>
+              <div class="password-meter mt-2" aria-live="polite">
+                <div class="password-meter-bar"><span id="passwordStrengthBar"></span></div>
+                <small id="passwordStrengthText" class="text-muted">Enter a strong password</small>
+              </div>
+              <div class="form-text">Minimum 8 characters with uppercase, lowercase, a number, and a symbol.</div>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Confirm password</label>
+              <div class="input-group">
+                <input type="password" class="form-control password-input" name="confirm_password" id="signup-confirm-password" required minlength="8" />
+                <button class="btn btn-outline-secondary toggle-password" type="button" data-target="signup-confirm-password">Show</button>
+              </div>
+            </div>
+          </div>
+          <div id="signup-reason" class="small text-warning mt-2" hidden></div>
+          <button type="submit" class="btn btn-success w-100 mt-3" id="signup-submit" hidden>Create member account</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const strengthBar = document.getElementById('passwordStrengthBar');
+  const strengthText = document.getElementById('passwordStrengthText');
+  const passwordInput = document.getElementById('signup-password');
+  const confirmInput = document.getElementById('signup-confirm-password');
+  const emailInput = document.getElementById('signup-email');
+  const signupSubmit = document.getElementById('signup-submit');
+  const signupReason = document.getElementById('signup-reason');
+
+  function isStrongPassword(value) {
+    return value.length >= 8 && /[a-z]/.test(value) && /[A-Z]/.test(value) && /\d/.test(value) && /[^A-Za-z0-9]/.test(value);
+  }
+
+  function isValidEmail(value) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  }
+
+  function updatePasswordStrength(value) {
+    if (!strengthBar || !strengthText || !passwordInput) {
+      return;
+    }
+
+    let score = 0;
+    if (value.length >= 8) score += 1;
+    if (/[A-Z]/.test(value)) score += 1;
+    if (/[a-z]/.test(value)) score += 1;
+    if (/\d/.test(value)) score += 1;
+    if (/[^A-Za-z0-9]/.test(value)) score += 1;
+
+    const levels = [
+      { label: 'Weak', color: '#dc3545' },
+      { label: 'Fair', color: '#fd7e14' },
+      { label: 'Good', color: '#ffc107' },
+      { label: 'Strong', color: '#198754' },
+      { label: 'Excellent', color: '#0d6efd' },
+    ];
+
+    const level = value ? levels[Math.min(score, 4)] : { label: 'Enter a strong password', color: '#6c757d' };
+    strengthBar.style.width = value ? ((score / 5) * 100) + '%' : '0%';
+    strengthBar.style.backgroundColor = level.color;
+    strengthText.textContent = level.label;
+    strengthText.style.color = level.color;
+  }
+
+  function updateSignupButton() {
+    if (!passwordInput || !confirmInput || !signupSubmit || !signupReason) {
+      return;
+    }
+
+    const passwordValue = passwordInput.value;
+    const confirmValue = confirmInput.value;
+    const emailValue = emailInput ? emailInput.value.trim() : '';
+
+    let reason = '';
+    if (!emailValue || !isValidEmail(emailValue)) {
+      reason = 'Please enter a valid email address.';
+    } else if (!isStrongPassword(passwordValue)) {
+      reason = 'Password must be at least 8 characters with uppercase, lowercase, a number, and a symbol.';
+    } else if (passwordValue !== confirmValue) {
+      reason = 'Passwords do not match.';
+    }
+
+    const isValid = !reason && passwordValue.length > 0 && confirmValue.length > 0;
+    signupReason.textContent = reason;
+    signupReason.hidden = !reason;
+    signupSubmit.hidden = !isValid;
+  }
+
+  if (passwordInput) {
+    passwordInput.addEventListener('input', function () {
+      updatePasswordStrength(this.value);
+      updateSignupButton();
+    });
+  }
+
+  if (confirmInput) {
+    confirmInput.addEventListener('input', function () {
+      updateSignupButton();
+    });
+  }
+
+  if (emailInput) {
+    emailInput.addEventListener('input', function () {
+      updateSignupButton();
+    });
+  }
+
+  document.querySelectorAll('.toggle-password').forEach(function (button) {
+    button.addEventListener('click', function () {
+      const input = document.getElementById(button.dataset.target);
+      if (!input) {
+        return;
+      }
+      const isHidden = input.type === 'password';
+      input.type = isHidden ? 'text' : 'password';
+      button.textContent = isHidden ? 'Hide' : 'Show';
+      button.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
+      updateSignupButton();
+    });
+  });
+
+  updatePasswordStrength(passwordInput ? passwordInput.value : '');
+  updateSignupButton();
+});
+</script>
+{% endblock %}

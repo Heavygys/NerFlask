@@ -1,0 +1,266 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ member.first_name }} {{ member.last_name }}{% endblock %}
+
+{% block content %}
+<section class="card shadow-sm border-0 mb-4">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+      <div>
+        <h1 class="h3 mb-1">{{ member.first_name }} {{ member.last_name }}</h1>
+        <p class="text-muted mb-0">{{ member.email }} | {{ member.phone or 'No phone' }}</p>
+      </div>
+      <div class="d-flex gap-2 flex-wrap">
+        <a href="{{ url_for('edit_member', member_id=member.id) }}" class="btn btn-outline-primary">
+          {% if current_role == 'admin' %}Edit Member{% else %}Modify profile{% endif %}
+        </a>
+        {% if current_role != 'member' %}
+        <a href="{{ url_for('home') }}" class="btn btn-secondary">Back to Members</a>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-md-3"><strong>Membership Type:</strong><br />{{ member.membership_type }}</div>
+      <div class="col-md-3"><strong>Status:</strong><br />{{ member.status }}</div>
+      <div class="col-md-3"><strong>Join Date:</strong><br />{{ member.join_date.strftime('%Y-%m-%d') }}</div>
+      <div class="col-md-3"><strong>Mobile:</strong><br />{{ member.mobile or 'No mobile' }}</div>
+      <div class="col-md-3"><strong>Home:</strong><br />{{ member.home_phone or 'No home phone' }}</div>
+      <div class="col-md-3"><strong>Phone:</strong><br />{{ member.phone or 'No phone' }}</div>
+      <div class="col-md-6"><strong>Address 1:</strong><br />{{ member.address_1 or 'No address 1' }}</div>
+      <div class="col-md-6"><strong>Address 2:</strong><br />{{ member.address_2 or 'No address 2' }}</div>
+      <div class="col-md-4"><strong>Town:</strong><br />{{ member.town or 'No town' }}</div>
+      <div class="col-md-4"><strong>City:</strong><br />{{ member.city or 'No city' }}</div>
+      <div class="col-md-4"><strong>Postcode:</strong><br />{{ member.postcode or 'No postcode' }}</div>
+      <div class="col-md-12"><strong>Notes:</strong><br />{{ member.notes or 'No notes' }}</div>
+    </div>
+  </div>
+</section>
+
+<section class="card shadow-sm border-0">
+  <div class="card-body">
+    <ul class="nav nav-tabs" id="memberRecordsTabs" role="tablist">
+      <li class="nav-item" role="presentation"><button class="nav-link active" id="certifications-tab" data-bs-toggle="tab" data-bs-target="#certifications" type="button" role="tab">Certifications</button></li>
+      <li class="nav-item" role="presentation"><button class="nav-link" id="boats-tab" data-bs-toggle="tab" data-bs-target="#boats" type="button" role="tab">Boats</button></li>
+      <li class="nav-item" role="presentation"><button class="nav-link" id="events-tab" data-bs-toggle="tab" data-bs-target="#events" type="button" role="tab">Events</button></li>
+    </ul>
+
+    <div class="tab-content pt-4" id="memberRecordsTabsContent">
+      <div class="tab-pane fade show active" id="certifications" role="tabpanel" aria-labelledby="certifications-tab">
+        <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+          <h2 class="h4 mb-0">Certification Records</h2>
+          <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addCertificationModal">Add Certification</button>
+        </div>
+    {% if member.certifications %}
+      <div class="table-responsive mt-2">
+        <table class="table table-striped">
+          <thead class="table-light">
+            <tr>
+              <th>Name</th>
+              <th>Number</th>
+              <th>Issue Date</th>
+              <th>Expiry Date</th>
+              <th>Status</th>
+              <th>Certificate Copy</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for cert in member.certifications %}
+            <tr>
+              <td>{{ cert.name }}</td>
+              <td>{{ cert.certification_number or '—' }}</td>
+              <td>{{ cert.issue_date.strftime('%Y-%m-%d') }}</td>
+              <td>{{ cert.expiry_date.strftime('%Y-%m-%d') if cert.expiry_date else '—' }}</td>
+              <td>{{ cert.status }}</td>
+              <td>
+                {% if cert.certificate_copy %}
+                  <a href="{{ url_for('static', filename=cert.certificate_copy) }}" target="_blank">View</a>
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="text-muted mb-0">No certifications recorded yet.</p>
+    {% endif %}
+      </div>
+
+      <div class="tab-pane fade" id="boats" role="tabpanel" aria-labelledby="boats-tab">
+        <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+          <h2 class="h4 mb-0">Boat Details</h2>
+          <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addBoatModal">Add Boat</button>
+        </div>
+    {% if member.boats %}
+      <div class="table-responsive mt-2">
+        <table class="table table-striped">
+          <thead class="table-light">
+            <tr>
+              <th>Name</th>
+              <th>Registration</th>
+              <th>Type</th>
+              <th>Length</th>
+              <th>Year</th>
+              <th>Engine</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for boat in member.boats %}
+            <tr>
+              <td>{{ boat.name }}</td>
+              <td>{{ boat.registration or '—' }}</td>
+              <td>{{ boat.boat_type or '—' }}</td>
+              <td>{{ boat.length or '—' }}</td>
+              <td>{{ boat.year or '—' }}</td>
+              <td>{{ boat.engine or '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="text-muted mb-0">No boats recorded yet.</p>
+    {% endif %}
+      </div>
+
+      <div class="tab-pane fade" id="events" role="tabpanel" aria-labelledby="events-tab">
+        <h2 class="h4 mb-3">Member Events</h2>
+    {% if member_events %}
+      <div class="table-responsive mt-2">
+        <table class="table table-striped">
+          <thead class="table-light">
+            <tr>
+              <th>Event</th>
+              <th>Members</th>
+              <th>Date From</th>
+              <th>Date To</th>
+              <th>Boats Needed</th>
+              {% if current_role in ['admin', 'staff', 'member'] %}<th></th>{% endif %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for event in member_events %}
+            <tr>
+              {% set participation = member_event_participations.get(event.id) %}
+              <td>{{ event.name }}</td>
+              <td>
+                {% for event_member in event.members %}
+                  {{ event_member.first_name }} {{ event_member.last_name }}{% if not loop.last %}, {% endif %}
+                {% endfor %}
+              </td>
+              <td>{{ event.date_from.strftime('%Y-%m-%d') }}</td>
+              <td>{{ event.date_to.strftime('%Y-%m-%d') if event.date_to else '—' }}</td>
+              <td>{{ event.boats_needed or 0 }}</td>
+              {% if current_role in ['admin', 'staff', 'member'] %}
+                <td>
+                  {% if participation and participation.status == 'Approved' %}
+                    <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#expenseModal{{ event.id }}">Add Expense</button>
+                  {% else %}
+                    <span class="badge text-bg-warning">Pending approval</span>
+                  {% endif %}
+                </td>
+              {% endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if current_role in ['admin', 'staff', 'member'] %}
+        {% for event in member_events %}
+          {% set participation = member_event_participations.get(event.id) %}
+          {% if participation and participation.status == 'Approved' %}
+          <div class="modal fade" id="expenseModal{{ event.id }}" tabindex="-1" aria-labelledby="expenseModalLabel{{ event.id }}" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+              <div class="modal-content">
+                <form method="POST" action="{{ url_for('add_event_expense', member_id=member.id) }}" enctype="multipart/form-data">
+                  <div class="modal-header">
+                    <h2 class="modal-title fs-5" id="expenseModalLabel{{ event.id }}">Add Expense: {{ event.name }}</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                  </div>
+                  <div class="modal-body">
+                    <input type="hidden" name="event_id" value="{{ event.id }}" />
+                    <div class="row g-3">
+                      <div class="col-md-6">
+                        <label class="form-label">Expense Type</label>
+                        <select class="form-select" name="expense_type" required>
+                          <option value="">Select a type</option>
+                          {% for expense_type in expense_types %}<option value="{{ expense_type }}">{{ expense_type }}</option>{% endfor %}
+                        </select>
+                      </div>
+                      <div class="col-md-6">
+                        <label class="form-label">Approved By</label>
+                        <select class="form-select" name="approved_by_user_id" required>
+                          <option value="">Select an approver</option>
+                          {% for approver in expense_approvers %}<option value="{{ approver.id }}">{{ approver.first_name or approver.email }} {{ approver.last_name or '' }} ({{ approver.role|title }})</option>{% endfor %}
+                        </select>
+                      </div>
+                      <div class="col-md-4"><label class="form-label">Date</label><input type="date" class="form-control" name="expense_date" required /></div>
+                      <div class="col-md-4"><label class="form-label">Amount</label><input type="number" class="form-control" name="amount" min="0.01" step="0.01" required /></div>
+                      <div class="col-md-4"><label class="form-label">Receipt Image</label><input type="file" class="form-control" name="receipt_image" accept="image/png,image/jpeg,image/gif,image/webp" required /></div>
+                    </div>
+                  </div>
+                  <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-success">Add Expense</button></div>
+                </form>
+              </div>
+            </div>
+          </div>
+          {% endif %}
+        {% endfor %}
+      {% endif %}
+
+      {% if current_role in ['admin', 'staff', 'member'] %}
+        <h3 class="h5 mt-4">Expense Records</h3>
+        {% if member.event_expenses %}
+          <div class="table-responsive mt-2">
+            <table class="table table-striped">
+              <thead class="table-light"><tr><th>Event</th><th>Type</th><th>Date</th><th>Amount</th><th>Approved By</th><th>Receipt</th></tr></thead>
+              <tbody>{% for expense in member.event_expenses|sort(attribute='expense_date', reverse=true) %}<tr><td>{{ expense.event.name }}</td><td>{{ expense.expense_type }}</td><td>{{ expense.expense_date.strftime('%Y-%m-%d') }}</td><td>{{ '%.2f'|format(expense.amount) }}</td><td>{{ expense.approved_by.first_name or expense.approved_by.email }} {{ expense.approved_by.last_name or '' }}</td><td>{% if expense.receipt_image %}<a href="{{ url_for('static', filename=expense.receipt_image) }}" target="_blank">View</a>{% else %}—{% endif %}</td></tr>{% endfor %}</tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="text-muted mb-0">No expenses recorded yet.</p>
+        {% endif %}
+      {% endif %}
+    {% else %}
+      <p class="text-muted mb-0">No events recorded for this member yet.</p>
+    {% endif %}
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="modal fade" id="addCertificationModal" tabindex="-1" aria-labelledby="addCertificationModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content"><form method="POST" action="{{ url_for('add_certification', member_id=member.id) }}" enctype="multipart/form-data">
+    <div class="modal-header"><h2 class="modal-title fs-5" id="addCertificationModalLabel">Add Certification</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+    <div class="modal-body"><div class="row g-3">
+      <div class="col-md-6"><label class="form-label">Certification Name</label><select class="form-select" name="name" required><option value="">Select a qualification</option>{% for qualification in qualifications %}<option value="{{ qualification.name }}">{{ qualification.name }}</option>{% endfor %}</select></div>
+      <div class="col-md-6"><label class="form-label">Certificate Number</label><input type="text" class="form-control" name="certification_number" /></div>
+      <div class="col-md-4"><label class="form-label">Issue Date</label><input type="date" class="form-control" name="issue_date" required /></div>
+      <div class="col-md-4"><label class="form-label">Expiry Date</label><input type="date" class="form-control" name="expiry_date" /></div>
+      <div class="col-md-6"><label class="form-label">Status</label><select class="form-select" name="status">{% for item in cert_statuses %}<option>{{ item }}</option>{% endfor %}</select></div>
+      <div class="col-md-6"><label class="form-label">Certificate Copy</label><input type="file" class="form-control" name="certificate_copy" accept=".pdf,.png,.jpg,.jpeg" /></div>
+    </div></div>
+    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-success">Add Certification</button></div>
+  </form></div></div>
+</div>
+
+<div class="modal fade" id="addBoatModal" tabindex="-1" aria-labelledby="addBoatModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content"><form method="POST" action="{{ url_for('add_boat', member_id=member.id) }}">
+    <div class="modal-header"><h2 class="modal-title fs-5" id="addBoatModalLabel">Add Boat</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+    <div class="modal-body"><div class="row g-3">
+      <div class="col-md-6"><label class="form-label">Boat Name</label><input type="text" class="form-control" name="name" required /></div>
+      <div class="col-md-6"><label class="form-label">Registration</label><input type="text" class="form-control" name="registration" /></div>
+      <div class="col-md-4"><label class="form-label">Type</label><input type="text" class="form-control" name="boat_type" /></div>
+      <div class="col-md-4"><label class="form-label">Length</label><input type="text" class="form-control" name="length" /></div>
+      <div class="col-md-4"><label class="form-label">Year</label><input type="number" class="form-control" name="year" min="1900" max="2100" /></div>
+      <div class="col-md-12"><label class="form-label">Engine</label><input type="text" class="form-control" name="engine" /></div>
+      <div class="col-md-12"><label class="form-label">Notes</label><textarea class="form-control" name="notes" rows="3"></textarea></div>
+    </div></div>
+    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-success">Add Boat</button></div>
+  </form></div></div>
+</div>
+{% endblock %}

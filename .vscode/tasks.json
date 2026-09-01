@@ -1,0 +1,233 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run Flask app",
+			"type": "shell",
+			"command": "c:\\Users\\woodg\\NerFlask\\.venv\\Scripts\\python.exe",
+			"args": [
+				"app.py"
+			],
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Install Python dependencies",
+			"type": "shell",
+			"command": "c:\\Users\\woodg\\NerFlask\\.venv\\Scripts\\python.exe -m pip install -r requirements.txt",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Verify auth flow",
+			"type": "shell",
+			"command": "c:\\Users\\woodg\\NerFlask\\.venv\\Scripts\\python.exe",
+			"args": [
+				"-c",
+				"from app import app, User, Member; client = app.test_client(); r = client.get('/login'); print('LOGIN_STATUS', r.status_code); print('HAS_CREATE_ACCOUNT', 'Create account' in r.get_data(as_text=True)); s = client.post('/signup', data={'first_name':'Test','last_name':'User','username':'testuser','email':'testuser@example.com','password':'pass123','confirm_password':'pass123'}, follow_redirects=False); print('SIGNUP_STATUS', s.status_code); print('SIGNUP_LOCATION', s.headers.get('Location')); print('USER_COUNT', User.query.filter_by(username='testuser').count()); print('MEMBER_COUNT', Member.query.filter_by(email='testuser@example.com').count());"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Validate auth script",
+			"type": "shell",
+			"command": "c:\\Users\\woodg\\NerFlask\\.venv\\Scripts\\python.exe",
+			"args": [
+				"verify_auth.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Verify auth flow after schema fix",
+			"type": "shell",
+			"command": "c:\\Users\\woodg\\NerFlask\\.venv\\Scripts\\python.exe",
+			"args": [
+				"verify_auth.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Verify auth flow after DB fix",
+			"type": "shell",
+			"command": "c:\\Users\\woodg\\NerFlask\\.venv\\Scripts\\python.exe",
+			"args": [
+				"verify_auth.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Final auth verification",
+			"type": "shell",
+			"command": "c:\\Users\\woodg\\NerFlask\\.venv\\Scripts\\python.exe",
+			"args": [
+				"verify_auth.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Install final deps and verify auth",
+			"type": "shell",
+			"command": "c:\\Users\\woodg\\NerFlask\\.venv\\Scripts\\python.exe -m pip install -r requirements.txt",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Final verification with runtime checks",
+			"type": "shell",
+			"command": "c:\\Users\\woodg\\NerFlask\\.venv\\Scripts\\python.exe",
+			"args": [
+				"verify_auth.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Verify email-based signup login",
+			"type": "shell",
+			"command": "c:\\Users\\woodg\\NerFlask\\.venv\\Scripts\\python.exe",
+			"args": [
+				"verify_auth.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Validate signup confirmation messages",
+			"type": "shell",
+			"command": "c:\\Users\\woodg\\NerFlask\\.venv\\Scripts\\python.exe",
+			"args": [
+				"-m",
+				"pytest",
+				"tests/test_app.py",
+				"-q"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Verify signup success and failure messages",
+			"type": "shell",
+			"command": "cmd /c \"c:\\Users\\woodg\\NerFlask\\.venv\\Scripts\\python.exe -c \\\"from app import app, db; app.config.update(TESTING=True, WTF_CSRF_ENABLED=False); client = app.test_client(); import os; os.environ['FLASK_ENV']='testing';\\nwith app.app_context():\\n    db.drop_all(); db.create_all();\\n    resp = client.post('/signup', data={'first_name':'Test','last_name':'User','email':'test@example.com','password':'abc123','confirm_password':'abc123'}, follow_redirects=True);\\n    print('SUCCESS_STATUS', resp.status_code);\\n    print('SUCCESS_TEXT', 'Account created successfully.' in resp.get_data(as_text=True));\\n    dup = client.post('/signup', data={'first_name':'Test2','last_name':'User2','email':'test@example.com','password':'abc123','confirm_password':'abc123'}, follow_redirects=True);\\n    print('FAIL_STATUS', dup.status_code);\\n    print('FAIL_TEXT', 'Account creation failed: that email is already registered.' in dup.get_data(as_text=True));\\n\\\"\"",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Verify signup confirmation messages",
+			"type": "shell",
+			"command": "c:\\Users\\woodg\\NerFlask\\.venv\\Scripts\\python.exe",
+			"args": [
+				"verify_signup_confirm.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Verify prominent signup notices",
+			"type": "shell",
+			"command": "c:\\Users\\woodg\\NerFlask\\.venv\\Scripts\\python.exe",
+			"args": [
+				"verify_signup_confirm.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Validate email-only login",
+			"type": "shell",
+			"command": "c:\\Users\\woodg\\NerFlask\\.venv\\Scripts\\python.exe",
+			"args": [
+				"verify_signup_confirm.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Email-only auth validation",
+			"type": "shell",
+			"command": "c:\\Users\\woodg\\NerFlask\\.venv\\Scripts\\python.exe",
+			"args": [
+				"verify_auth.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Verify email-only auth after schema cleanup",
+			"type": "shell",
+			"command": "c:\\Users\\woodg\\NerFlask\\.venv\\Scripts\\python.exe",
+			"args": [
+				"verify_auth.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Validate unified member-user profile flow",
+			"type": "shell",
+			"command": "c:\\Users\\woodg\\NerFlask\\.venv\\Scripts\\python.exe",
+			"args": [
+				"verify_auth.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Validate member profile edit access",
+			"type": "shell",
+			"command": "c:\\Users\\woodg\\NerFlask\\.venv\\Scripts\\python.exe",
+			"args": [
+				"verify_auth.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Verify password rules",
+			"type": "shell",
+			"command": "c:\\Users\\woodg\\NerFlask\\.venv\\Scripts\\python.exe",
+			"args": [
+				"-c",
+				"from app import is_strong_password; print(is_strong_password('Password123!')); print(is_strong_password('weak'))"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Validate password policy",
+			"type": "shell",
+			"command": "c:\\Users\\woodg\\NerFlask\\.venv\\Scripts\\python.exe",
+			"args": [
+				"-c",
+				"from app import is_strong_password; print(is_strong_password('Password123!')); print(is_strong_password('weak'))"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		}
+	]
+}

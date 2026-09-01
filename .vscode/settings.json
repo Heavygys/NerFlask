@@ -1,0 +1,12 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^C:/Users/woodg/AppData/Local/Programs/Python/Python313/python\\.exe -m py_compile app\\.py; C:/Users/woodg/AppData/Local/Programs/Python/Python313/python\\.exe -c \"from app import app; client = app\\.test_client\\(\\); r = client\\.get\\('/'\\); print\\('STATUS', r\\.status_code\\); print\\('HAS_TITLE', 'Northern Exposure Reduce' in r\\.get_data\\(as_text=True\\)\\); print\\('CONTENT_TYPE', r\\.headers\\.get\\('Content-Type',''\\)\\)\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^& 'C:/Users/woodg/AppData/Local/Programs/Python/Python313/python\\.exe' -m py_compile app\\.py; if \\(\\$LASTEXITCODE -eq 0\\) \\{ Write-Host 'PY_COMPILE_OK' \\} else \\{ Write-Host 'PY_COMPILE_FAIL'; exit \\$LASTEXITCODE \\}$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}
