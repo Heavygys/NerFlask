@@ -111,6 +111,10 @@ class Boat(db.Model):
     length = db.Column(db.String(20), nullable=True)
     year = db.Column(db.Integer, nullable=True)
     engine = db.Column(db.String(80), nullable=True)
+    mmsi_number = db.Column(db.String(20), nullable=True)
+    ssr_number = db.Column(db.String(80), nullable=True)
+    vhf = db.Column(db.Boolean, nullable=False, default=False)
+    ais = db.Column(db.Boolean, nullable=False, default=False)
     notes = db.Column(db.Text, nullable=True)
 
 
@@ -135,6 +139,20 @@ class Event(db.Model):
     longitude = db.Column(db.Float, nullable=True)
     tide_data = db.Column(db.JSON, nullable=True)
     tide_error = db.Column(db.String(255), nullable=True)
+
+
+class EventDocument(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(db.Integer, db.ForeignKey("event.id"), nullable=False)
+    description = db.Column(db.String(255), nullable=False)
+    document_data = db.Column(db.LargeBinary, nullable=False)
+    document_filename = db.Column(db.String(255), nullable=False)
+    document_content_type = db.Column(db.String(120), nullable=False)
+    uploaded_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    event = db.relationship("Event", backref=db.backref("documents", lazy=True, cascade="all, delete-orphan"))
+    uploaded_by = db.relationship("User", foreign_keys=[uploaded_by_user_id])
 
 
 class EventExpense(db.Model):
@@ -424,6 +442,20 @@ def ensure_database_schema():
         }.items():
             if column_name not in member_names:
                 db.session.execute(text(f"ALTER TABLE member ADD COLUMN {column_name} {column_def}"))
+    except Exception:
+        pass
+
+    try:
+        boat_columns = db.session.execute(text("PRAGMA table_info(boat)")).fetchall()
+        boat_names = {row[1] for row in boat_columns}
+        for column_name, column_type in {
+            "mmsi_number": "VARCHAR(20)",
+            "ssr_number": "VARCHAR(80)",
+            "vhf": "BOOLEAN NOT NULL DEFAULT 0",
+            "ais": "BOOLEAN NOT NULL DEFAULT 0",
+        }.items():
+            if column_name not in boat_names:
+                db.session.execute(text(f"ALTER TABLE boat ADD COLUMN {column_name} {column_type}"))
     except Exception:
         pass
 
@@ -755,6 +787,16 @@ def create_app():
         if expense.receipt_image:
             return redirect(url_for("static", filename=expense.receipt_image))
         abort(404)
+
+    @app.route("/event-document/<int:document_id>/file")
+    @login_required
+    def view_event_document_file(document_id):
+        document = EventDocument.query.get_or_404(document_id)
+        return send_file(
+            io.BytesIO(document.document_data),
+            mimetype=document.document_content_type,
+            download_name=document.document_filename,
+        )
 
     @app.route("/signup", methods=["GET", "POST"])
     def signup():
@@ -1274,6 +1316,34 @@ def create_app():
         flash(f"You have unsubscribed from {event.name}.")
         return redirect(url_for("events"))
 
+    @app.route("/event/<int:event_id>/documents/add", methods=["POST"])
+    @login_required
+    @role_required("admin", "staff")
+    def add_event_document(event_id):
+        event = Event.query.get_or_404(event_id)
+        description = request.form.get("description", "").strip()
+        document_file = request.files.get("document")
+        if not description or not document_file or not document_file.filename:
+            flash("A document description and file are required.")
+            return redirect(url_for("events", month=event.date_from.month, year=event.date_from.year, selected_event_id=event.id))
+
+        filename = secure_filename(document_file.filename)
+        if not filename:
+            flash("Choose a valid document file.")
+            return redirect(url_for("events", month=event.date_from.month, year=event.date_from.year, selected_event_id=event.id))
+
+        db.session.add(EventDocument(
+            event_id=event.id,
+            description=description,
+            document_data=document_file.read(),
+            document_filename=filename,
+            document_content_type=document_file.mimetype or mimetypes.guess_type(filename)[0] or "application/octet-stream",
+            uploaded_by_user_id=session["user_id"],
+        ))
+        db.session.commit()
+        flash("Event document added successfully.")
+        return redirect(url_for("events", month=event.date_from.month, year=event.date_from.year, selected_event_id=event.id))
+
     @app.route("/events/new", methods=["GET", "POST"])
     @login_required
     @role_required("admin", "staff")
@@ -1325,20 +1395,30 @@ def create_app():
             flash("Event created successfully.")
             return redirect(url_for("events"))
 
+        date_from_value = request.args.get("date_from", "")
+        try:
+            date_from_value = datetime.strptime(date_from_value, "%Y-%m-%d").date().isoformat()
+        except ValueError:
+            date_from_value = ""
+
         return render_template(
             "new_event.html",
             all_members=Member.query.order_by(Member.last_name, Member.first_name).all(),
             current_user=session.get("username"),
             current_role=session.get("role"),
+            date_from_value=date_from_value,
         )
 
     @app.route("/event/<int:event_id>/edit", methods=["GET", "POST"])
     @login_required
-    @role_required("admin")
+    @role_required("admin", "staff")
     def edit_event(event_id):
         event = Event.query.get_or_404(event_id)
 
         if request.method == "POST":
+            if session.get("role") != "admin":
+                flash("Only administrators can change event details.")
+                return redirect(url_for("edit_event", event_id=event.id))
             name = request.form.get("name", "").strip()
             date_from = request.form.get("date_from", "")
             date_to = request.form.get("date_to", "")
@@ -1412,7 +1492,7 @@ def create_app():
 
     @app.route("/members/add", methods=["POST"])
     @login_required
-    @role_required("admin")
+    @role_required("admin", "staff")
     def add_member():
         first_name = request.form.get("first_name", "").strip()
         last_name = request.form.get("last_name", "").strip()
@@ -1473,12 +1553,17 @@ def create_app():
         }
         selected_event_id = request.args.get("selected_event_id", type=int)
         selected_event = next((event for event in member_events if event.id == selected_event_id), None)
-        selected_event_expenses = []
+        active_tab = request.args.get("tab", "certifications")
         if selected_event:
-            selected_event_expenses = EventExpense.query.filter_by(
-                event_id=selected_event.id,
-                member_id=member.id,
-            ).order_by(EventExpense.expense_date.desc(), EventExpense.id.desc()).all()
+            active_tab = "events"
+        elif active_tab not in {"certifications", "boats", "events"}:
+            active_tab = "certifications"
+        event_expenses_by_event = {event.id: [] for event in member_events}
+        for expense in EventExpense.query.filter_by(member_id=member.id).order_by(
+            EventExpense.expense_date.desc(), EventExpense.id.desc()
+        ).all():
+            if expense.event_id in event_expenses_by_event:
+                event_expenses_by_event[expense.event_id].append(expense)
         return render_template(
             "member_detail.html",
             member=member,
@@ -1486,7 +1571,8 @@ def create_app():
             member_events=member_events,
             member_event_participations=member_event_participations,
             selected_event=selected_event,
-            selected_event_expenses=selected_event_expenses,
+            event_expenses_by_event=event_expenses_by_event,
+            active_tab=active_tab,
             current_user=session.get("username"),
             current_role=session.get("role"),
             cert_statuses=get_lookup_values("certification_status"),
@@ -1779,7 +1865,55 @@ def create_app():
         db.session.add(certification)
         db.session.commit()
         flash("Certification added successfully.")
-        return redirect(url_for("member_detail", member_id=member.id))
+        return redirect(url_for("member_detail", member_id=member.id, tab="certifications"))
+
+    @app.route("/member/<int:member_id>/certification/<int:certification_id>/edit", methods=["POST"])
+    @login_required
+    def edit_certification(member_id, certification_id):
+        member = Member.query.get_or_404(member_id)
+        certification = Certification.query.filter_by(id=certification_id, member_id=member.id).first_or_404()
+        if session.get("role") == "member" and member.email != session.get("username"):
+            flash("You can only manage your own certifications.")
+            return redirect(url_for("my_profile"))
+
+        name = request.form.get("name", "").strip()
+        issue_date = request.form.get("issue_date", "")
+        if not name or not issue_date or not Qualification.query.filter_by(name=name).first():
+            flash("Please provide a valid certification name and issue date.")
+            return redirect(url_for("member_detail", member_id=member.id, tab="certifications"))
+
+        certification.name = name
+        certification.certification_number = request.form.get("certification_number", "").strip() or None
+        certification.issue_date = datetime.strptime(issue_date, "%Y-%m-%d").date()
+        expiry_date = request.form.get("expiry_date", "")
+        certification.expiry_date = datetime.strptime(expiry_date, "%Y-%m-%d").date() if expiry_date else None
+        certification.status = request.form.get("status", "Valid").strip() or "Valid"
+        certificate_file = request.files.get("certificate_copy")
+        if certificate_file and certificate_file.filename:
+            filename = secure_filename(certificate_file.filename)
+            if filename:
+                certification.certificate_copy = None
+                certification.certificate_data = certificate_file.read()
+                certification.certificate_filename = filename
+                certification.certificate_content_type = certificate_file.mimetype or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+
+        db.session.commit()
+        flash("Certification updated successfully.")
+        return redirect(url_for("member_detail", member_id=member.id, tab="certifications"))
+
+    @app.route("/member/<int:member_id>/certification/<int:certification_id>/delete", methods=["POST"])
+    @login_required
+    def delete_certification(member_id, certification_id):
+        member = Member.query.get_or_404(member_id)
+        certification = Certification.query.filter_by(id=certification_id, member_id=member.id).first_or_404()
+        if session.get("role") == "member" and member.email != session.get("username"):
+            flash("You can only manage your own certifications.")
+            return redirect(url_for("my_profile"))
+
+        db.session.delete(certification)
+        db.session.commit()
+        flash("Certification deleted successfully.")
+        return redirect(url_for("member_detail", member_id=member.id, tab="certifications"))
 
     @app.route("/member/<int:member_id>/boat/add", methods=["POST"])
     @login_required
@@ -1794,6 +1928,8 @@ def create_app():
         length = request.form.get("length", "").strip()
         year = request.form.get("year", "")
         engine = request.form.get("engine", "").strip()
+        mmsi_number = request.form.get("mmsi_number", "").strip()
+        ssr_number = request.form.get("ssr_number", "").strip()
         notes = request.form.get("notes", "").strip()
 
         if not name:
@@ -1808,12 +1944,59 @@ def create_app():
             length=length or None,
             year=int(year) if year else None,
             engine=engine or None,
+            mmsi_number=mmsi_number or None,
+            ssr_number=ssr_number or None,
+            vhf=request.form.get("vhf") == "on",
+            ais=request.form.get("ais") == "on",
             notes=notes or None,
         )
         db.session.add(boat)
         db.session.commit()
         flash("Boat added successfully.")
-        return redirect(url_for("member_detail", member_id=member.id))
+        return redirect(url_for("member_detail", member_id=member.id, tab="boats"))
+
+    @app.route("/member/<int:member_id>/boat/<int:boat_id>/edit", methods=["POST"])
+    @login_required
+    def edit_boat(member_id, boat_id):
+        member = Member.query.get_or_404(member_id)
+        boat = Boat.query.filter_by(id=boat_id, member_id=member.id).first_or_404()
+        if session.get("role") == "member" and member.email != session.get("username"):
+            flash("You can only manage your own boats.")
+            return redirect(url_for("my_profile"))
+
+        boat.name = request.form.get("name", "").strip()
+        boat.registration = request.form.get("registration", "").strip() or None
+        boat.boat_type = request.form.get("boat_type", "").strip() or None
+        boat.length = request.form.get("length", "").strip() or None
+        year = request.form.get("year", "")
+        boat.year = int(year) if year else None
+        boat.engine = request.form.get("engine", "").strip() or None
+        boat.mmsi_number = request.form.get("mmsi_number", "").strip() or None
+        boat.ssr_number = request.form.get("ssr_number", "").strip() or None
+        boat.vhf = request.form.get("vhf") == "on"
+        boat.ais = request.form.get("ais") == "on"
+        boat.notes = request.form.get("notes", "").strip() or None
+        if not boat.name:
+            flash("Boat name is required.")
+            return redirect(url_for("member_detail", member_id=member.id, tab="boats"))
+
+        db.session.commit()
+        flash("Boat updated successfully.")
+        return redirect(url_for("member_detail", member_id=member.id, tab="boats"))
+
+    @app.route("/member/<int:member_id>/boat/<int:boat_id>/delete", methods=["POST"])
+    @login_required
+    def delete_boat(member_id, boat_id):
+        member = Member.query.get_or_404(member_id)
+        boat = Boat.query.filter_by(id=boat_id, member_id=member.id).first_or_404()
+        if session.get("role") == "member" and member.email != session.get("username"):
+            flash("You can only manage your own boats.")
+            return redirect(url_for("my_profile"))
+
+        db.session.delete(boat)
+        db.session.commit()
+        flash("Boat deleted successfully.")
+        return redirect(url_for("member_detail", member_id=member.id, tab="boats"))
 
     return app
 

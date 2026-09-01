@@ -40,13 +40,13 @@
 <section class="card shadow-sm border-0">
   <div class="card-body">
     <ul class="nav nav-tabs" id="memberRecordsTabs" role="tablist">
-      <li class="nav-item" role="presentation"><button class="nav-link {% if not selected_event %}active{% endif %}" id="certifications-tab" data-bs-toggle="tab" data-bs-target="#certifications" type="button" role="tab">Certifications</button></li>
-      <li class="nav-item" role="presentation"><button class="nav-link" id="boats-tab" data-bs-toggle="tab" data-bs-target="#boats" type="button" role="tab">Boats</button></li>
-      <li class="nav-item" role="presentation"><button class="nav-link {% if selected_event %}active{% endif %}" id="events-tab" data-bs-toggle="tab" data-bs-target="#events" type="button" role="tab">Events</button></li>
+      <li class="nav-item" role="presentation"><button class="nav-link {% if active_tab == 'certifications' %}active{% endif %}" id="certifications-tab" data-bs-toggle="tab" data-bs-target="#certifications" type="button" role="tab">Certifications</button></li>
+      <li class="nav-item" role="presentation"><button class="nav-link {% if active_tab == 'boats' %}active{% endif %}" id="boats-tab" data-bs-toggle="tab" data-bs-target="#boats" type="button" role="tab">Boats</button></li>
+      <li class="nav-item" role="presentation"><button class="nav-link {% if active_tab == 'events' %}active{% endif %}" id="events-tab" data-bs-toggle="tab" data-bs-target="#events" type="button" role="tab">Events</button></li>
     </ul>
 
     <div class="tab-content pt-4" id="memberRecordsTabsContent">
-      <div class="tab-pane fade {% if not selected_event %}show active{% endif %}" id="certifications" role="tabpanel" aria-labelledby="certifications-tab">
+      <div class="tab-pane fade {% if active_tab == 'certifications' %}show active{% endif %}" id="certifications" role="tabpanel" aria-labelledby="certifications-tab">
         <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
           <h2 class="h4 mb-0">Certification Records</h2>
           <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addCertificationModal">Add Certification</button>
@@ -62,6 +62,7 @@
               <th>Expiry Date</th>
               <th>Status</th>
               <th>Certificate Copy</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -79,6 +80,7 @@
                   —
                 {% endif %}
               </td>
+              <td><div class="d-flex gap-1"><button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#editCertificationModal{{ cert.id }}">Edit</button><form method="POST" action="{{ url_for('delete_certification', member_id=member.id, certification_id=cert.id) }}"><button type="submit" class="btn btn-outline-danger btn-sm">Delete</button></form></div></td>
             </tr>
             {% endfor %}
           </tbody>
@@ -89,7 +91,7 @@
     {% endif %}
       </div>
 
-      <div class="tab-pane fade" id="boats" role="tabpanel" aria-labelledby="boats-tab">
+      <div class="tab-pane fade {% if active_tab == 'boats' %}show active{% endif %}" id="boats" role="tabpanel" aria-labelledby="boats-tab">
         <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
           <h2 class="h4 mb-0">Boat Details</h2>
           <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addBoatModal">Add Boat</button>
@@ -105,6 +107,11 @@
               <th>Length</th>
               <th>Year</th>
               <th>Engine</th>
+              <th>MMSI</th>
+              <th>SSR</th>
+              <th>VHF</th>
+              <th>AIS</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -116,6 +123,11 @@
               <td>{{ boat.length or '—' }}</td>
               <td>{{ boat.year or '—' }}</td>
               <td>{{ boat.engine or '—' }}</td>
+              <td>{{ boat.mmsi_number or '—' }}</td>
+              <td>{{ boat.ssr_number or '—' }}</td>
+              <td>{{ 'Yes' if boat.vhf else 'No' }}</td>
+              <td>{{ 'Yes' if boat.ais else 'No' }}</td>
+              <td><div class="d-flex gap-1"><button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#editBoatModal{{ boat.id }}">Edit</button><form method="POST" action="{{ url_for('delete_boat', member_id=member.id, boat_id=boat.id) }}"><button type="submit" class="btn btn-outline-danger btn-sm">Delete</button></form></div></td>
             </tr>
             {% endfor %}
           </tbody>
@@ -126,7 +138,7 @@
     {% endif %}
       </div>
 
-      <div class="tab-pane fade {% if selected_event %}show active{% endif %}" id="events" role="tabpanel" aria-labelledby="events-tab">
+      <div class="tab-pane fade {% if active_tab == 'events' %}show active{% endif %}" id="events" role="tabpanel" aria-labelledby="events-tab">
         <h2 class="h4 mb-3">Member Events</h2>
     {% if member_events %}
       <div class="table-responsive mt-2">
@@ -134,26 +146,18 @@
           <thead class="table-light">
             <tr>
               <th>Event</th>
-              <th>Members</th>
               <th>Date From</th>
               <th>Date To</th>
-              <th>Boats Needed</th>
               {% if current_role in ['admin', 'staff', 'member'] %}<th></th>{% endif %}
             </tr>
           </thead>
           <tbody>
             {% for event in member_events %}
-            <tr class="{% if selected_event and selected_event.id == event.id %}table-active{% endif %}" role="button" tabindex="0" style="cursor: pointer;" onclick="window.location='{{ url_for('member_detail', member_id=member.id, selected_event_id=event.id) }}#events'" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }">
+            <tr class="member-event-row {% if selected_event and selected_event.id == event.id %}table-active{% endif %}" data-event-id="{{ event.id }}" role="button" tabindex="0" style="cursor: pointer;" onclick="selectMemberEvent({{ event.id }})" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectMemberEvent({{ event.id }}); }">
               {% set participation = member_event_participations.get(event.id) %}
               <td>{{ event.name }}</td>
-              <td>
-                {% for event_member in event.members %}
-                  {{ event_member.first_name }} {{ event_member.last_name }}{% if not loop.last %}, {% endif %}
-                {% endfor %}
-              </td>
               <td>{{ event.date_from.strftime('%Y-%m-%d') }}</td>
               <td>{{ event.date_to.strftime('%Y-%m-%d') if event.date_to else '—' }}</td>
-              <td>{{ event.boats_needed or 0 }}</td>
               {% if current_role in ['admin', 'staff', 'member'] %}
                 <td>
                   {% if participation and participation.status == 'Approved' %}
@@ -205,18 +209,23 @@
         {% endfor %}
       {% endif %}
 
-      {% if current_role in ['admin', 'staff', 'member'] and selected_event %}
-        <h3 class="h5 mt-4">Expense Records: {{ selected_event.name }}</h3>
-        {% if selected_event_expenses %}
+      {% if current_role in ['admin', 'staff', 'member'] %}
+        {% for event in member_events %}
+        <div class="member-event-expenses {% if not selected_event or selected_event.id != event.id %}d-none{% endif %}" data-event-id="{{ event.id }}">
+        <h3 class="h5 mt-4">Expense Records: {{ event.name }}</h3>
+        {% set event_expenses = event_expenses_by_event.get(event.id, []) %}
+        {% if event_expenses %}
           <div class="table-responsive mt-2">
             <table class="table table-striped">
               <thead class="table-light"><tr><th>Event</th><th>Type</th><th>Date</th><th>Amount</th><th>Submitted By</th><th>Receipt</th></tr></thead>
-              <tbody>{% for expense in selected_event_expenses %}<tr><td>{{ expense.event.name }}</td><td>{{ expense.expense_type }}</td><td>{{ expense.expense_date.strftime('%Y-%m-%d') }}</td><td>{{ '%.2f'|format(expense.amount) }}</td><td>{{ expense.approved_by.first_name or expense.approved_by.email }} {{ expense.approved_by.last_name or '' }}</td><td>{% if expense.receipt_data or expense.receipt_image %}<a href="{{ url_for('view_expense_receipt', expense_id=expense.id) }}" target="_blank">View</a>{% else %}—{% endif %}</td></tr>{% endfor %}</tbody>
+              <tbody>{% for expense in event_expenses %}<tr><td>{{ expense.event.name }}</td><td>{{ expense.expense_type }}</td><td>{{ expense.expense_date.strftime('%Y-%m-%d') }}</td><td>{{ '%.2f'|format(expense.amount) }}</td><td>{{ expense.approved_by.first_name or expense.approved_by.email }} {{ expense.approved_by.last_name or '' }}</td><td>{% if expense.receipt_data or expense.receipt_image %}<a href="{{ url_for('view_expense_receipt', expense_id=expense.id) }}" target="_blank">View</a>{% else %}—{% endif %}</td></tr>{% endfor %}</tbody>
             </table>
           </div>
         {% else %}
           <p class="text-muted mb-0">No expenses recorded for this event.</p>
         {% endif %}
+        </div>
+        {% endfor %}
       {% endif %}
     {% else %}
       <p class="text-muted mb-0">No events recorded for this member yet.</p>
@@ -225,6 +234,19 @@
     </div>
   </div>
 </section>
+
+{% block scripts %}
+<script>
+  function selectMemberEvent(eventId) {
+    document.querySelectorAll('.member-event-row').forEach((row) => {
+      row.classList.toggle('table-active', Number(row.dataset.eventId) === eventId);
+    });
+    document.querySelectorAll('.member-event-expenses').forEach((grid) => {
+      grid.classList.toggle('d-none', Number(grid.dataset.eventId) !== eventId);
+    });
+  }
+</script>
+{% endblock %}
 
 <div class="modal fade" id="addCertificationModal" tabindex="-1" aria-labelledby="addCertificationModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content"><form method="POST" action="{{ url_for('add_certification', member_id=member.id) }}" enctype="multipart/form-data">
@@ -241,6 +263,23 @@
   </form></div></div>
 </div>
 
+{% for cert in member.certifications %}
+<div class="modal fade" id="editCertificationModal{{ cert.id }}" tabindex="-1" aria-labelledby="editCertificationModalLabel{{ cert.id }}" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content"><form method="POST" action="{{ url_for('edit_certification', member_id=member.id, certification_id=cert.id) }}" enctype="multipart/form-data">
+    <div class="modal-header"><h2 class="modal-title fs-5" id="editCertificationModalLabel{{ cert.id }}">Edit Certification</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+    <div class="modal-body"><div class="row g-3">
+      <div class="col-md-6"><label class="form-label">Certification Name</label><select class="form-select" name="name" required>{% for qualification in qualifications %}<option value="{{ qualification.name }}" {% if qualification.name == cert.name %}selected{% endif %}>{{ qualification.name }}</option>{% endfor %}</select></div>
+      <div class="col-md-6"><label class="form-label">Certificate Number</label><input type="text" class="form-control" name="certification_number" value="{{ cert.certification_number or '' }}" /></div>
+      <div class="col-md-4"><label class="form-label">Issue Date</label><input type="date" class="form-control" name="issue_date" value="{{ cert.issue_date.strftime('%Y-%m-%d') }}" required /></div>
+      <div class="col-md-4"><label class="form-label">Expiry Date</label><input type="date" class="form-control" name="expiry_date" value="{{ cert.expiry_date.strftime('%Y-%m-%d') if cert.expiry_date else '' }}" /></div>
+      <div class="col-md-6"><label class="form-label">Status</label><select class="form-select" name="status">{% for item in cert_statuses %}<option {% if item == cert.status %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
+      <div class="col-md-6"><label class="form-label">Replace Certificate Copy</label><input type="file" class="form-control" name="certificate_copy" accept=".pdf,.png,.jpg,.jpeg" /></div>
+    </div></div>
+    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Save Changes</button></div>
+  </form></div></div>
+</div>
+{% endfor %}
+
 <div class="modal fade" id="addBoatModal" tabindex="-1" aria-labelledby="addBoatModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content"><form method="POST" action="{{ url_for('add_boat', member_id=member.id) }}">
     <div class="modal-header"><h2 class="modal-title fs-5" id="addBoatModalLabel">Add Boat</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
@@ -251,9 +290,35 @@
       <div class="col-md-4"><label class="form-label">Length</label><input type="text" class="form-control" name="length" /></div>
       <div class="col-md-4"><label class="form-label">Year</label><input type="number" class="form-control" name="year" min="1900" max="2100" /></div>
       <div class="col-md-12"><label class="form-label">Engine</label><input type="text" class="form-control" name="engine" /></div>
+      <div class="col-md-6"><label class="form-label">MMSI Number</label><input type="text" class="form-control" name="mmsi_number" /></div>
+      <div class="col-md-6"><label class="form-label">SSR Number</label><input type="text" class="form-control" name="ssr_number" /></div>
+      <div class="col-md-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="vhf" id="boatVhf" /><label class="form-check-label" for="boatVhf">VHF fitted</label></div></div>
+      <div class="col-md-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="ais" id="boatAis" /><label class="form-check-label" for="boatAis">AIS fitted</label></div></div>
       <div class="col-md-12"><label class="form-label">Notes</label><textarea class="form-control" name="notes" rows="3"></textarea></div>
     </div></div>
     <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-success">Add Boat</button></div>
   </form></div></div>
 </div>
+
+{% for boat in member.boats %}
+<div class="modal fade" id="editBoatModal{{ boat.id }}" tabindex="-1" aria-labelledby="editBoatModalLabel{{ boat.id }}" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content"><form method="POST" action="{{ url_for('edit_boat', member_id=member.id, boat_id=boat.id) }}">
+    <div class="modal-header"><h2 class="modal-title fs-5" id="editBoatModalLabel{{ boat.id }}">Edit Boat</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+    <div class="modal-body"><div class="row g-3">
+      <div class="col-md-6"><label class="form-label">Boat Name</label><input type="text" class="form-control" name="name" value="{{ boat.name }}" required /></div>
+      <div class="col-md-6"><label class="form-label">Registration</label><input type="text" class="form-control" name="registration" value="{{ boat.registration or '' }}" /></div>
+      <div class="col-md-4"><label class="form-label">Type</label><input type="text" class="form-control" name="boat_type" value="{{ boat.boat_type or '' }}" /></div>
+      <div class="col-md-4"><label class="form-label">Length</label><input type="text" class="form-control" name="length" value="{{ boat.length or '' }}" /></div>
+      <div class="col-md-4"><label class="form-label">Year</label><input type="number" class="form-control" name="year" min="1900" max="2100" value="{{ boat.year or '' }}" /></div>
+      <div class="col-md-12"><label class="form-label">Engine</label><input type="text" class="form-control" name="engine" value="{{ boat.engine or '' }}" /></div>
+      <div class="col-md-6"><label class="form-label">MMSI Number</label><input type="text" class="form-control" name="mmsi_number" value="{{ boat.mmsi_number or '' }}" /></div>
+      <div class="col-md-6"><label class="form-label">SSR Number</label><input type="text" class="form-control" name="ssr_number" value="{{ boat.ssr_number or '' }}" /></div>
+      <div class="col-md-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="vhf" id="editBoatVhf{{ boat.id }}" {% if boat.vhf %}checked{% endif %} /><label class="form-check-label" for="editBoatVhf{{ boat.id }}">VHF fitted</label></div></div>
+      <div class="col-md-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="ais" id="editBoatAis{{ boat.id }}" {% if boat.ais %}checked{% endif %} /><label class="form-check-label" for="editBoatAis{{ boat.id }}">AIS fitted</label></div></div>
+      <div class="col-md-12"><label class="form-label">Notes</label><textarea class="form-control" name="notes" rows="3">{{ boat.notes or '' }}</textarea></div>
+    </div></div>
+    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Save Changes</button></div>
+  </form></div></div>
+</div>
+{% endfor %}
 {% endblock %}

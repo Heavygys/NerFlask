@@ -23,15 +23,15 @@
     </div>
 
     {% if events %}
-      <div class="row g-3 align-items-start">
+      <div id="eventBrowser" class="row g-3 align-items-start">
         <div class="col-xl-7">
           <div class="card border-0 shadow-sm">
             <div class="card-body p-3">
               <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
                 <h2 class="h5 mb-0">{{ current_month }}/{{ current_year }}</h2>
                 <div class="btn-group btn-group-sm">
-                  <a href="{{ url_for('events', month=prev_month, year=prev_year) }}" class="btn btn-outline-secondary">Previous</a>
-                  <a href="{{ url_for('events', month=next_month, year=next_year) }}" class="btn btn-outline-secondary">Next</a>
+                  <a href="{{ url_for('events', month=prev_month, year=prev_year) }}" class="btn btn-outline-secondary event-month-select-link">Previous</a>
+                  <a href="{{ url_for('events', month=next_month, year=next_year) }}" class="btn btn-outline-secondary event-month-select-link">Next</a>
                 </div>
               </div>
 
@@ -44,7 +44,7 @@
               {% for week in calendar_weeks %}
                 <div class="row g-1 mb-1">
                   {% for day in week %}
-                    <div class="col border rounded p-1" style="min-height: 70px; background: transparent;">
+                    <div class="col border rounded p-1 {% if current_role in ['admin', 'staff'] and day %}event-calendar-day{% endif %}" {% if current_role in ['admin', 'staff'] and day %}data-event-date="{{ '%04d-%02d-%02d'|format(current_year, current_month, day) }}"{% endif %} style="min-height: 70px; background: transparent;">
                       {% if day %}
                         {% set day_key = '%04d-%02d-%02d'|format(current_year, current_month, day) %}
                         {% set day_events = events_by_date.get(day_key, []) %}
@@ -52,7 +52,7 @@
                         {% if day_events %}
                           <div class="d-flex flex-column gap-1">
                             {% for event in day_events %}
-                              <a href="{{ url_for('events', month=current_month, year=current_year, selected_event_id=event.id) }}" class="event-pill">
+                              <a href="{{ url_for('events', month=current_month, year=current_year, selected_event_id=event.id) }}" class="event-pill event-select-link" data-event-id="{{ event.id }}">
                                 {{ event.name }}
                               </a>
                             {% endfor %}
@@ -75,13 +75,13 @@
             <h2 class="h6 text-uppercase mb-3">Event Months</h2>
             {% for event_month in event_months %}
               <div class="mb-3">
-                <a href="{{ url_for('events', month=event_month.month, year=event_month.year) }}" class="event-month-link {% if event_month.month == current_month and event_month.year == current_year %}active{% endif %}">
+                <a href="{{ url_for('events', month=event_month.month, year=event_month.year) }}" class="event-month-link event-month-select-link {% if event_month.month == current_month and event_month.year == current_year %}active{% endif %}">
                   {{ event_month.label }}
                 </a>
                 <ul class="list-unstyled mb-0 mt-1">
                   {% for event in event_month.events %}
                     <li>
-                      <a href="{{ url_for('events', month=event_month.month, year=event_month.year, selected_event_id=event.id) }}" class="event-month-event {% if selected_event and selected_event.id == event.id %}active{% endif %}">
+                      <a href="{{ url_for('events', month=event_month.month, year=event_month.year, selected_event_id=event.id) }}" class="event-month-event event-select-link {% if selected_event and selected_event.id == event.id %}active{% endif %}" data-event-id="{{ event.id }}">
                         {{ event.date_from.strftime('%d') }} {{ event.name }}
                       </a>
                     </li>
@@ -92,7 +92,7 @@
           </div>
         </div>
 
-        <div class="col-xl-3">
+        <div id="selectedEventDetails" class="col-xl-3">
           {% if selected_event %}
             <div class="card border-0 shadow-sm h-100">
               <div class="card-body">
@@ -104,8 +104,8 @@
                       {% if selected_event.date_to %} - {{ selected_event.date_to.strftime('%Y-%m-%d') }}{% endif %}
                     </div>
                   </div>
-                  {% if current_role == 'admin' %}
-                    <a href="{{ url_for('edit_event', event_id=selected_event.id) }}" class="btn btn-outline-primary btn-sm">Edit</a>
+                  {% if current_role in ['admin', 'staff'] %}
+                    <a href="{{ url_for('edit_event', event_id=selected_event.id) }}" class="btn btn-outline-primary btn-sm">{% if current_role == 'admin' %}Edit{% else %}Documents{% endif %}</a>
                   {% endif %}
                 </div>
 
@@ -115,6 +115,19 @@
 
                 <div class="mb-3">
                   <strong>Notes:</strong><br />{{ selected_event.notes or '—' }}
+                </div>
+
+                <div class="mb-3">
+                  <strong>Documents:</strong>
+                  {% if selected_event.documents %}
+                    <ul class="list-unstyled mb-0 mt-2">
+                      {% for document in selected_event.documents %}
+                      <li class="mb-1"><a href="{{ url_for('view_event_document_file', document_id=document.id) }}" target="_blank">{{ document.description }}</a> <span class="text-muted small">({{ document.document_filename }})</span></li>
+                      {% endfor %}
+                    </ul>
+                  {% else %}
+                    <p class="text-muted small mb-0 mt-1">No documents added.</p>
+                  {% endif %}
                 </div>
 
                 <div class="mb-3">
@@ -170,6 +183,7 @@
         </div>
       </div>
 
+      <div id="selectedEventLocations">
       {% if selected_event %}
         <section class="card border-0 shadow-sm mt-3">
           <div class="card-body py-3">
@@ -198,24 +212,114 @@
           </div>
         </section>
       {% endif %}
+      </div>
     {% else %}
       <p class="text-muted mb-0">No events have been added yet.</p>
     {% endif %}
   </div>
 </section>
+{% if current_role in ['admin', 'staff'] %}
+<div id="eventCalendarContextMenu" class="dropdown-menu position-fixed" style="z-index: 1080;"></div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script>
-  const w3wLocationFrame = document.getElementById('w3wLocationFrame');
-  const w3wLocationButtons = document.querySelectorAll('.w3w-location-button');
-
-  w3wLocationButtons.forEach((button) => {
-    button.addEventListener('click', () => {
-      w3wLocationFrame.src = button.dataset.w3wUrl;
-      w3wLocationButtons.forEach((locationButton) => locationButton.classList.remove('active'));
-      button.classList.add('active');
+  function initializeWhat3wordsLocations() {
+    const w3wLocationFrame = document.getElementById('w3wLocationFrame');
+    document.querySelectorAll('.w3w-location-button').forEach((button) => {
+      button.addEventListener('click', () => {
+        if (w3wLocationFrame) {
+          w3wLocationFrame.src = button.dataset.w3wUrl;
+        }
+        document.querySelectorAll('.w3w-location-button').forEach((locationButton) => locationButton.classList.remove('active'));
+        button.classList.add('active');
+      });
     });
-  });
+  }
+
+  async function selectEvent(event) {
+    event.preventDefault();
+    const link = event.currentTarget;
+    const selectedEventId = link.dataset.eventId;
+    const response = await fetch(link.href, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+    if (!response.ok) {
+      window.location.assign(link.href);
+      return;
+    }
+
+    const selectedPage = new DOMParser().parseFromString(await response.text(), 'text/html');
+    const newDetails = selectedPage.getElementById('selectedEventDetails');
+    const newLocations = selectedPage.getElementById('selectedEventLocations');
+    if (!newDetails || !newLocations) {
+      window.location.assign(link.href);
+      return;
+    }
+
+    document.getElementById('selectedEventDetails').replaceWith(newDetails);
+    document.getElementById('selectedEventLocations').replaceWith(newLocations);
+    document.querySelectorAll('.event-month-event').forEach((link) => {
+      link.classList.toggle('active', link.dataset.eventId === selectedEventId);
+    });
+    window.history.replaceState({}, '', link.href);
+    initializeWhat3wordsLocations();
+  }
+
+  async function selectEventMonth(event) {
+    event.preventDefault();
+    const link = event.currentTarget;
+    const response = await fetch(link.href, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+    if (!response.ok) {
+      window.location.assign(link.href);
+      return;
+    }
+
+    const selectedPage = new DOMParser().parseFromString(await response.text(), 'text/html');
+    const newBrowser = selectedPage.getElementById('eventBrowser');
+    const newLocations = selectedPage.getElementById('selectedEventLocations');
+    if (!newBrowser || !newLocations) {
+      window.location.assign(link.href);
+      return;
+    }
+
+    document.getElementById('eventBrowser').replaceWith(newBrowser);
+    document.getElementById('selectedEventLocations').replaceWith(newLocations);
+    window.history.replaceState({}, '', link.href);
+    initializeEventBrowser();
+  }
+
+  function initializeEventBrowser() {
+    document.querySelectorAll('.event-select-link').forEach((link) => {
+      link.addEventListener('click', selectEvent);
+    });
+    document.querySelectorAll('.event-month-select-link').forEach((link) => {
+      link.addEventListener('click', selectEventMonth);
+    });
+    initializeCalendarContextMenu();
+  }
+
+  function initializeCalendarContextMenu() {
+    const menu = document.getElementById('eventCalendarContextMenu');
+    if (!menu) {
+      return;
+    }
+    document.querySelectorAll('.event-calendar-day').forEach((day) => {
+      day.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+        const createUrl = {{ url_for('new_event')|tojson }} + '?date_from=' + encodeURIComponent(day.dataset.eventDate);
+        menu.innerHTML = '<a class="dropdown-item" href="' + createUrl + '">Create event for ' + day.dataset.eventDate + '</a>';
+        menu.style.left = event.clientX + 'px';
+        menu.style.top = event.clientY + 'px';
+        menu.classList.add('show');
+      });
+    });
+    if (!menu.dataset.dismissBound) {
+      document.addEventListener('click', () => menu.classList.remove('show'));
+      menu.dataset.dismissBound = 'true';
+    }
+  }
+
+  initializeEventBrowser();
+  initializeWhat3wordsLocations();
 </script>
 {% endblock %}

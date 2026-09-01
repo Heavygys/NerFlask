@@ -13,6 +13,7 @@
       <a href="{{ url_for('events') }}" class="btn btn-outline-secondary">Back to Events</a>
     </div>
 
+    {% if current_role == 'admin' %}
     <form method="POST" action="{{ url_for('edit_event', event_id=event.id) }}">
       <div class="row g-3">
         <div class="col-md-6">
@@ -70,6 +71,25 @@
         <a href="{{ url_for('events') }}" class="btn btn-outline-secondary">Cancel</a>
       </div>
     </form>
+    {% endif %}
+
+    <section class="border-top pt-4 mt-4">
+      <h2 class="h5 mb-3">Event Documents</h2>
+      {% if event.documents %}
+      <ul class="list-unstyled mb-3">
+        {% for document in event.documents %}
+        <li class="mb-1"><a href="{{ url_for('view_event_document_file', document_id=document.id) }}" target="_blank">{{ document.description }}</a> <span class="text-muted small">({{ document.document_filename }})</span></li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="text-muted">No documents added.</p>
+      {% endif %}
+      <form method="POST" action="{{ url_for('add_event_document', event_id=event.id) }}" enctype="multipart/form-data" class="row g-3">
+        <div class="col-md-6"><label class="form-label">Document Description</label><input type="text" class="form-control" name="description" required /></div>
+        <div class="col-md-6"><label class="form-label">Document File</label><input type="file" class="form-control" name="document" required /></div>
+        <div class="col-12"><button type="submit" class="btn btn-outline-primary">Upload Document</button></div>
+      </form>
+    </section>
   </div>
 </section>
 {% endblock %}

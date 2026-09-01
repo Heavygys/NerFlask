@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 os.environ["NERFLASK_DATABASE_URI"] = "sqlite:///northern_exposure_test.db"
 
-from app import Certification, Event, EventExpense, EventParticipation, LookupItem, Member, Qualification, User, app, db, get_event_participation
+from app import Boat, Certification, Event, EventDocument, EventExpense, EventParticipation, LookupItem, Member, Qualification, User, app, db, get_event_participation
 
 
 app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
@@ -46,6 +46,25 @@ def test_login_clears_stale_member_session():
     assert 'Login' in response.get_data(as_text=True)
 
 
+def test_staff_can_open_add_member_modal_and_create_member():
+    with app.app_context():
+        staff = User(email='add-member-staff@example.com', role='staff')
+        staff.set_password('Password123!')
+        db.session.add(staff)
+        db.session.commit()
+
+    client = app.test_client()
+    client.post('/login', data={'email': 'add-member-staff@example.com', 'password': 'Password123!'})
+    response = client.get('/')
+    assert 'data-bs-target="#addMemberModal"' in response.get_data(as_text=True)
+    response = client.post('/members/add', data={
+        'first_name': 'New', 'last_name': 'Member', 'email': 'new-member@example.com',
+    }, follow_redirects=True)
+    assert 'Member added successfully.' in response.get_data(as_text=True)
+    with app.app_context():
+        assert Member.query.filter_by(email='new-member@example.com').count() == 1
+
+
 def test_event_month_navigator_links_to_calendar_months():
     with app.app_context():
         admin = User(email='events-admin@example.com', role='admin')
@@ -82,6 +101,18 @@ def test_event_month_navigator_links_to_calendar_months():
     assert 'data-w3w-url="https://what3words.com/filled.count.soap"' in html
     assert 'id="w3wLocationFrame"' in html
     assert 'Location 1:' not in html
+    assert 'class="event-pill event-select-link"' in html
+    assert 'async function selectEvent(event)' in html
+    assert 'async function selectEventMonth(event)' in html
+    assert 'event-month-link event-month-select-link' in html
+    assert 'event-calendar-day' in html
+    assert 'eventCalendarContextMenu' in html
+    assert 'Create event for ' in html
+    assert 'window.location.assign(link.href)' in html
+
+    create_response = client.get('/events/new?date_from=2026-03-15')
+    assert create_response.status_code == 200
+    assert 'name="date_from" value="2026-03-15"' in create_response.get_data(as_text=True)
 
     no_w3w_response = client.get('/events?month=6&year=2026&selected_event_id=2')
     assert 'Tide Times' in no_w3w_response.get_data(as_text=True)
@@ -111,6 +142,46 @@ def test_member_can_unsubscribe_from_event():
         event = db.session.get(Event, event_id)
         assert member not in event.members
         assert get_event_participation(event_id, member.id) is None
+
+
+def test_staff_can_upload_event_documents_and_members_can_view_them():
+    with app.app_context():
+        staff = User(email='document-staff@example.com', role='staff')
+        staff.set_password('Password123!')
+        member = User(email='document-member@example.com', role='member')
+        member.set_password('Password123!')
+        event = Event(name='Document Test', date_from=date(2026, 8, 12))
+        db.session.add_all([staff, member, event])
+        db.session.commit()
+        event_id = event.id
+
+    client = app.test_client()
+    client.post('/login', data={'email': 'document-staff@example.com', 'password': 'Password123!'})
+    event_page = client.get(f'/events?selected_event_id={event_id}')
+    assert 'Upload Document' not in event_page.get_data(as_text=True)
+    edit_page = client.get(f'/event/{event_id}/edit')
+    assert edit_page.status_code == 200
+    assert 'Event Documents' in edit_page.get_data(as_text=True)
+    assert 'Upload Document' in edit_page.get_data(as_text=True)
+    response = client.post(
+        f'/event/{event_id}/documents/add',
+        data={'description': 'Event safety plan', 'document': (io.BytesIO(b'safety-plan'), 'safety-plan.pdf')},
+        content_type='multipart/form-data',
+        follow_redirects=True,
+    )
+    assert 'Event document added successfully.' in response.get_data(as_text=True)
+    with app.app_context():
+        document = EventDocument.query.filter_by(event_id=event_id).one()
+        assert document.description == 'Event safety plan'
+        assert document.document_data == b'safety-plan'
+        document_id = document.id
+
+    client.get('/logout')
+    client.post('/login', data={'email': 'document-member@example.com', 'password': 'Password123!'})
+    response = client.get(f'/event-document/{document_id}/file')
+    assert response.status_code == 200
+    assert response.data == b'safety-plan'
+    assert response.mimetype == 'application/pdf'
 
 
 def test_event_tides_are_cached_on_create_and_refresh_without_page_fetch():
@@ -270,6 +341,68 @@ def test_add_certification_with_db_qualification_and_upload():
     assert certificate_response.data == b'certificate-data'
     assert certificate_response.mimetype == 'application/pdf'
 
+    response = client.post(
+        f'/member/{member_id}/certification/{certification_id}/edit',
+        data={
+            'name': 'RYA Powerboat Level 2',
+            'certification_number': 'PB-101',
+            'issue_date': '2024-01-15',
+            'expiry_date': '2029-01-15',
+            'status': 'Valid',
+            'certificate_copy': (io.BytesIO(b'replacement-certificate'), 'replacement.pdf'),
+        },
+        content_type='multipart/form-data',
+        follow_redirects=True,
+    )
+    assert 'Certification updated successfully.' in response.get_data(as_text=True)
+    assert 'id="certifications-tab" data-bs-toggle="tab" data-bs-target="#certifications" type="button" role="tab">Certifications</button>' in response.get_data(as_text=True)
+    with app.app_context():
+        certification = db.session.get(Certification, certification_id)
+        assert certification.certification_number == 'PB-101'
+        assert certification.expiry_date == date(2029, 1, 15)
+        assert certification.certificate_data == b'replacement-certificate'
+        assert certification.certificate_filename == 'replacement.pdf'
+
+    response = client.post(f'/member/{member_id}/certification/{certification_id}/delete', follow_redirects=True)
+    assert 'Certification deleted successfully.' in response.get_data(as_text=True)
+    with app.app_context():
+        assert db.session.get(Certification, certification_id) is None
+
+
+def test_boat_crud_includes_radio_and_registration_fields():
+    with app.app_context():
+        member = Member.query.filter_by(email='alice@example.com').one()
+        admin = User(email='boat-admin@example.com', role='admin')
+        admin.set_password('Password123!')
+        db.session.add(admin)
+        db.session.commit()
+        member_id = member.id
+
+    client = app.test_client()
+    client.post('/login', data={'email': 'boat-admin@example.com', 'password': 'Password123!'})
+    response = client.post(f'/member/{member_id}/boat/add', data={
+        'name': 'Northern Star', 'mmsi_number': '235123456', 'ssr_number': 'SSR-42', 'vhf': 'on', 'ais': 'on',
+    }, follow_redirects=True)
+    assert 'Boat added successfully.' in response.get_data(as_text=True)
+    with app.app_context():
+        boat = Boat.query.filter_by(member_id=member_id).one()
+        assert (boat.mmsi_number, boat.ssr_number, boat.vhf, boat.ais) == ('235123456', 'SSR-42', True, True)
+        boat_id = boat.id
+
+    response = client.post(f'/member/{member_id}/boat/{boat_id}/edit', data={
+        'name': 'Northern Star', 'mmsi_number': '235654321', 'ssr_number': 'SSR-99', 'vhf': 'on',
+    }, follow_redirects=True)
+    assert 'Boat updated successfully.' in response.get_data(as_text=True)
+    assert 'id="boats-tab" data-bs-toggle="tab" data-bs-target="#boats" type="button" role="tab">Boats</button>' in response.get_data(as_text=True)
+    with app.app_context():
+        boat = db.session.get(Boat, boat_id)
+        assert (boat.mmsi_number, boat.ssr_number, boat.vhf, boat.ais) == ('235654321', 'SSR-99', True, False)
+
+    response = client.post(f'/member/{member_id}/boat/{boat_id}/delete', follow_redirects=True)
+    assert 'Boat deleted successfully.' in response.get_data(as_text=True)
+    with app.app_context():
+        assert db.session.get(Boat, boat_id) is None
+
 
 def test_add_event_expense_for_assigned_member_with_receipt():
     with app.app_context():
@@ -360,10 +493,13 @@ def test_add_event_expense_for_assigned_member_with_receipt():
     assert receipt_response.mimetype == 'image/png'
 
     unselected_event_page = client.get(f'/member/{member_id}')
-    assert 'Expense Records:' not in unselected_event_page.get_data(as_text=True)
+    unselected_event_html = unselected_event_page.get_data(as_text=True)
+    assert 'member-event-expenses d-none' in unselected_event_html
     selected_event_page = client.get(f'/member/{member_id}?selected_event_id={event_id}')
     selected_event_html = selected_event_page.get_data(as_text=True)
     assert selected_event_page.status_code == 200
+    assert 'window.location=' not in selected_event_html
+    assert 'function selectMemberEvent(eventId)' in selected_event_html
     assert 'id="events-tab" data-bs-toggle="tab" data-bs-target="#events" type="button" role="tab">Events</button>' in selected_event_html
     assert 'id="events" role="tabpanel" aria-labelledby="events-tab"' in selected_event_html
     assert 'Expense Records: Training Day' in selected_event_html
