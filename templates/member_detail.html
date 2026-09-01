@@ -40,13 +40,13 @@
 <section class="card shadow-sm border-0">
   <div class="card-body">
     <ul class="nav nav-tabs" id="memberRecordsTabs" role="tablist">
-      <li class="nav-item" role="presentation"><button class="nav-link active" id="certifications-tab" data-bs-toggle="tab" data-bs-target="#certifications" type="button" role="tab">Certifications</button></li>
+      <li class="nav-item" role="presentation"><button class="nav-link {% if not selected_event %}active{% endif %}" id="certifications-tab" data-bs-toggle="tab" data-bs-target="#certifications" type="button" role="tab">Certifications</button></li>
       <li class="nav-item" role="presentation"><button class="nav-link" id="boats-tab" data-bs-toggle="tab" data-bs-target="#boats" type="button" role="tab">Boats</button></li>
-      <li class="nav-item" role="presentation"><button class="nav-link" id="events-tab" data-bs-toggle="tab" data-bs-target="#events" type="button" role="tab">Events</button></li>
+      <li class="nav-item" role="presentation"><button class="nav-link {% if selected_event %}active{% endif %}" id="events-tab" data-bs-toggle="tab" data-bs-target="#events" type="button" role="tab">Events</button></li>
     </ul>
 
     <div class="tab-content pt-4" id="memberRecordsTabsContent">
-      <div class="tab-pane fade show active" id="certifications" role="tabpanel" aria-labelledby="certifications-tab">
+      <div class="tab-pane fade {% if not selected_event %}show active{% endif %}" id="certifications" role="tabpanel" aria-labelledby="certifications-tab">
         <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
           <h2 class="h4 mb-0">Certification Records</h2>
           <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addCertificationModal">Add Certification</button>
@@ -73,8 +73,8 @@
               <td>{{ cert.expiry_date.strftime('%Y-%m-%d') if cert.expiry_date else '—' }}</td>
               <td>{{ cert.status }}</td>
               <td>
-                {% if cert.certificate_copy %}
-                  <a href="{{ url_for('static', filename=cert.certificate_copy) }}" target="_blank">View</a>
+                {% if cert.certificate_data or cert.certificate_copy %}
+                  <a href="{{ url_for('view_certificate_file', certification_id=cert.id) }}" target="_blank">View</a>
                 {% else %}
                   —
                 {% endif %}
@@ -126,7 +126,7 @@
     {% endif %}
       </div>
 
-      <div class="tab-pane fade" id="events" role="tabpanel" aria-labelledby="events-tab">
+      <div class="tab-pane fade {% if selected_event %}show active{% endif %}" id="events" role="tabpanel" aria-labelledby="events-tab">
         <h2 class="h4 mb-3">Member Events</h2>
     {% if member_events %}
       <div class="table-responsive mt-2">
@@ -143,7 +143,7 @@
           </thead>
           <tbody>
             {% for event in member_events %}
-            <tr>
+            <tr class="{% if selected_event and selected_event.id == event.id %}table-active{% endif %}" role="button" tabindex="0" style="cursor: pointer;" onclick="window.location='{{ url_for('member_detail', member_id=member.id, selected_event_id=event.id) }}#events'" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }">
               {% set participation = member_event_participations.get(event.id) %}
               <td>{{ event.name }}</td>
               <td>
@@ -157,7 +157,7 @@
               {% if current_role in ['admin', 'staff', 'member'] %}
                 <td>
                   {% if participation and participation.status == 'Approved' %}
-                    <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#expenseModal{{ event.id }}">Add Expense</button>
+                    <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#expenseModal{{ event.id }}" onclick="event.stopPropagation()">Add Expense</button>
                   {% else %}
                     <span class="badge text-bg-warning">Pending approval</span>
                   {% endif %}
@@ -205,17 +205,17 @@
         {% endfor %}
       {% endif %}
 
-      {% if current_role in ['admin', 'staff', 'member'] %}
-        <h3 class="h5 mt-4">Expense Records</h3>
-        {% if member.event_expenses %}
+      {% if current_role in ['admin', 'staff', 'member'] and selected_event %}
+        <h3 class="h5 mt-4">Expense Records: {{ selected_event.name }}</h3>
+        {% if selected_event_expenses %}
           <div class="table-responsive mt-2">
             <table class="table table-striped">
               <thead class="table-light"><tr><th>Event</th><th>Type</th><th>Date</th><th>Amount</th><th>Submitted By</th><th>Receipt</th></tr></thead>
-              <tbody>{% for expense in member.event_expenses|sort(attribute='expense_date', reverse=true) %}<tr><td>{{ expense.event.name }}</td><td>{{ expense.expense_type }}</td><td>{{ expense.expense_date.strftime('%Y-%m-%d') }}</td><td>{{ '%.2f'|format(expense.amount) }}</td><td>{{ expense.approved_by.first_name or expense.approved_by.email }} {{ expense.approved_by.last_name or '' }}</td><td>{% if expense.receipt_image %}<a href="{{ url_for('static', filename=expense.receipt_image) }}" target="_blank">View</a>{% else %}—{% endif %}</td></tr>{% endfor %}</tbody>
+              <tbody>{% for expense in selected_event_expenses %}<tr><td>{{ expense.event.name }}</td><td>{{ expense.expense_type }}</td><td>{{ expense.expense_date.strftime('%Y-%m-%d') }}</td><td>{{ '%.2f'|format(expense.amount) }}</td><td>{{ expense.approved_by.first_name or expense.approved_by.email }} {{ expense.approved_by.last_name or '' }}</td><td>{% if expense.receipt_data or expense.receipt_image %}<a href="{{ url_for('view_expense_receipt', expense_id=expense.id) }}" target="_blank">View</a>{% else %}—{% endif %}</td></tr>{% endfor %}</tbody>
             </table>
           </div>
         {% else %}
-          <p class="text-muted mb-0">No expenses recorded yet.</p>
+          <p class="text-muted mb-0">No expenses recorded for this event.</p>
         {% endif %}
       {% endif %}
     {% else %}

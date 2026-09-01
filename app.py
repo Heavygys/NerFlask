@@ -1,4 +1,6 @@
 import calendar
+import io
+import mimetypes
 import os
 import re
 import secrets
@@ -11,7 +13,7 @@ from urllib.parse import urlencode
 
 import requests
 from dotenv import load_dotenv
-from flask import Flask, flash, redirect, render_template, request, session, url_for
+from flask import Flask, abort, flash, redirect, render_template, request, send_file, session, url_for
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import or_, text
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -95,6 +97,9 @@ class Certification(db.Model):
     expiry_date = db.Column(db.Date, nullable=True)
     status = db.Column(db.String(30), default="Valid")
     certificate_copy = db.Column(db.String(255), nullable=True)
+    certificate_data = db.Column(db.LargeBinary, nullable=True)
+    certificate_filename = db.Column(db.String(255), nullable=True)
+    certificate_content_type = db.Column(db.String(120), nullable=True)
 
 
 class Boat(db.Model):
@@ -141,6 +146,9 @@ class EventExpense(db.Model):
     amount = db.Column(db.Numeric(10, 2), nullable=False)
     approved_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     receipt_image = db.Column(db.String(255), nullable=True)
+    receipt_data = db.Column(db.LargeBinary, nullable=True)
+    receipt_filename = db.Column(db.String(255), nullable=True)
+    receipt_content_type = db.Column(db.String(120), nullable=True)
     status = db.Column(db.String(20), nullable=False, default="Pending")
     reviewed_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     reviewed_at = db.Column(db.DateTime, nullable=True)
@@ -422,8 +430,14 @@ def ensure_database_schema():
     try:
         certification_columns = db.session.execute(text("PRAGMA table_info(certification)")).fetchall()
         certification_names = {row[1] for row in certification_columns}
-        if "certificate_copy" not in certification_names:
-            db.session.execute(text("ALTER TABLE certification ADD COLUMN certificate_copy VARCHAR(255)"))
+        for column_name, column_type in {
+            "certificate_copy": "VARCHAR(255)",
+            "certificate_data": "BLOB",
+            "certificate_filename": "VARCHAR(255)",
+            "certificate_content_type": "VARCHAR(120)",
+        }.items():
+            if column_name not in certification_names:
+                db.session.execute(text(f"ALTER TABLE certification ADD COLUMN {column_name} {column_type}"))
     except Exception:
         pass
 
@@ -436,6 +450,9 @@ def ensure_database_schema():
             "reviewed_at": "DATETIME",
             "paid_by_user_id": "INTEGER",
             "paid_at": "DATETIME",
+            "receipt_data": "BLOB",
+            "receipt_filename": "VARCHAR(255)",
+            "receipt_content_type": "VARCHAR(120)",
         }.items():
             if column_name not in expense_names:
                 db.session.execute(text(f"ALTER TABLE event_expense ADD COLUMN {column_name} {column_type}"))
@@ -522,6 +539,27 @@ def ensure_database_schema():
     db.session.commit()
 
 
+def migrate_legacy_uploads(upload_folder):
+    uploads = (
+        (Certification, "certificate_copy", "certificate_data", "certificate_filename", "certificate_content_type"),
+        (EventExpense, "receipt_image", "receipt_data", "receipt_filename", "receipt_content_type"),
+    )
+    for model, path_field, data_field, filename_field, content_type_field in uploads:
+        for record in model.query.filter(getattr(model, data_field).is_(None)).all():
+            relative_path = getattr(record, path_field)
+            if not relative_path:
+                continue
+            filename = os.path.basename(relative_path)
+            file_path = os.path.join(upload_folder, filename)
+            if not os.path.isfile(file_path):
+                continue
+            with open(file_path, "rb") as upload_file:
+                setattr(record, data_field, upload_file.read())
+            setattr(record, filename_field, filename)
+            setattr(record, content_type_field, mimetypes.guess_type(filename)[0] or "application/octet-stream")
+    db.session.commit()
+
+
 def generate_reset_token(user):
     token = secrets.token_urlsafe(32)
     user.reset_token = generate_password_hash(token)
@@ -587,6 +625,7 @@ def create_app():
 
     with app.app_context():
         ensure_database_schema()
+        migrate_legacy_uploads(app.config["UPLOAD_FOLDER"])
 
         rya_qualifications = [
             ("RYA Powerboat Level 2", "Powerboat"),
@@ -682,6 +721,40 @@ def create_app():
             return redirect(url_for("login"))
 
         return render_template("login.html")
+
+    @app.route("/certification/<int:certification_id>/file")
+    @login_required
+    def view_certificate_file(certification_id):
+        certification = Certification.query.get_or_404(certification_id)
+        if session.get("role") == "member" and certification.member.email != session.get("username"):
+            flash("You can only view your own certification files.")
+            return redirect(url_for("my_profile"))
+        if certification.certificate_data:
+            return send_file(
+                io.BytesIO(certification.certificate_data),
+                mimetype=certification.certificate_content_type or "application/octet-stream",
+                download_name=certification.certificate_filename or "certificate",
+            )
+        if certification.certificate_copy:
+            return redirect(url_for("static", filename=certification.certificate_copy))
+        abort(404)
+
+    @app.route("/expense/<int:expense_id>/receipt")
+    @login_required
+    def view_expense_receipt(expense_id):
+        expense = EventExpense.query.get_or_404(expense_id)
+        if session.get("role") == "member" and expense.member.email != session.get("username"):
+            flash("You can only view your own expense receipts.")
+            return redirect(url_for("my_profile"))
+        if expense.receipt_data:
+            return send_file(
+                io.BytesIO(expense.receipt_data),
+                mimetype=expense.receipt_content_type or "application/octet-stream",
+                download_name=expense.receipt_filename or "receipt",
+            )
+        if expense.receipt_image:
+            return redirect(url_for("static", filename=expense.receipt_image))
+        abort(404)
 
     @app.route("/signup", methods=["GET", "POST"])
     def signup():
@@ -1400,6 +1473,12 @@ def create_app():
         }
         selected_event_id = request.args.get("selected_event_id", type=int)
         selected_event = next((event for event in member_events if event.id == selected_event_id), None)
+        selected_event_expenses = []
+        if selected_event:
+            selected_event_expenses = EventExpense.query.filter_by(
+                event_id=selected_event.id,
+                member_id=member.id,
+            ).order_by(EventExpense.expense_date.desc(), EventExpense.id.desc()).all()
         return render_template(
             "member_detail.html",
             member=member,
@@ -1407,6 +1486,7 @@ def create_app():
             member_events=member_events,
             member_event_participations=member_event_participations,
             selected_event=selected_event,
+            selected_event_expenses=selected_event_expenses,
             current_user=session.get("username"),
             current_role=session.get("role"),
             cert_statuses=get_lookup_values("certification_status"),
@@ -1536,9 +1616,7 @@ def create_app():
         if extension not in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
             flash("Receipt must be an image file.")
             return redirect(redirect_url)
-        unique_name = f"expense_{member.id}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{filename}"
-        receipt_file.save(os.path.join(app.config["UPLOAD_FOLDER"], unique_name))
-        receipt_path = f"uploads/{unique_name}"
+        receipt_data = receipt_file.read()
 
         db.session.add(EventExpense(
             event_id=event.id,
@@ -1547,7 +1625,9 @@ def create_app():
             expense_date=parsed_date,
             amount=amount,
             approved_by_user_id=submitting_user.id,
-            receipt_image=receipt_path,
+            receipt_data=receipt_data,
+            receipt_filename=filename,
+            receipt_content_type=receipt_file.mimetype or mimetypes.guess_type(filename)[0] or "application/octet-stream",
             status="Pending",
         ))
         db.session.commit()
@@ -1675,14 +1755,15 @@ def create_app():
             flash("Please select a valid qualification from the list.")
             return redirect(url_for("member_detail", member_id=member.id))
 
-        file_path = None
+        certificate_data = None
+        certificate_filename = None
+        certificate_content_type = None
         if certificate_file and certificate_file.filename:
             filename = secure_filename(certificate_file.filename)
             if filename:
-                unique_name = f"{member.id}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{filename}"
-                destination = os.path.join(app.config["UPLOAD_FOLDER"], unique_name)
-                certificate_file.save(destination)
-                file_path = f"uploads/{unique_name}"
+                certificate_data = certificate_file.read()
+                certificate_filename = filename
+                certificate_content_type = certificate_file.mimetype or mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
         certification = Certification(
             member_id=member.id,
@@ -1691,7 +1772,9 @@ def create_app():
             issue_date=datetime.strptime(issue_date, "%Y-%m-%d").date(),
             expiry_date=datetime.strptime(expiry_date, "%Y-%m-%d").date() if expiry_date else None,
             status=status or "Valid",
-            certificate_copy=file_path,
+            certificate_data=certificate_data,
+            certificate_filename=certificate_filename,
+            certificate_content_type=certificate_content_type,
         )
         db.session.add(certification)
         db.session.commit()

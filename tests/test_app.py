@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 os.environ["NERFLASK_DATABASE_URI"] = "sqlite:///northern_exposure_test.db"
 
-from app import Certification, Event, EventExpense, EventParticipation, LookupItem, Member, User, app, db, get_event_participation
+from app import Certification, Event, EventExpense, EventParticipation, LookupItem, Member, Qualification, User, app, db, get_event_participation
 
 
 app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
@@ -229,12 +229,19 @@ def test_edit_and_delete_member():
 
 
 def test_add_certification_with_db_qualification_and_upload():
-    client = app.test_client()
-    client.post('/login', data={'email': 'admin@noreply.local', 'password': 'admin123'})
+    with app.app_context():
+        member = Member.query.filter_by(email='alice@example.com').one()
+        admin = User(email='certificate-admin@example.com', role='admin')
+        admin.set_password('Password123!')
+        qualification = Qualification(name='RYA Powerboat Level 2', category='Powerboat')
+        db.session.add_all([admin, qualification])
+        db.session.commit()
+        member_id = member.id
 
-    member = Member.query.filter_by(email='alice@example.com').first()
+    client = app.test_client()
+    client.post('/login', data={'email': 'certificate-admin@example.com', 'password': 'Password123!'})
     response = client.post(
-        f'/member/{member.id}/certification/add',
+        f'/member/{member_id}/certification/add',
         data={
             'name': 'RYA Powerboat Level 2',
             'certification_number': 'PB-100',
@@ -248,13 +255,20 @@ def test_add_certification_with_db_qualification_and_upload():
     )
 
     assert response.status_code == 200
-    assert 'Certificate added successfully.' in response.get_data(as_text=True)
+    assert 'Certification added successfully.' in response.get_data(as_text=True)
 
-    certification = Certification.query.filter_by(member_id=member.id).first()
-    assert certification is not None
-    assert certification.name == 'RYA Powerboat Level 2'
-    assert certification.certificate_copy
-    assert certification.certificate_copy.endswith('.pdf')
+    with app.app_context():
+        certification = Certification.query.filter_by(member_id=member_id).one()
+        assert certification.name == 'RYA Powerboat Level 2'
+        assert certification.certificate_copy is None
+        assert certification.certificate_data == b'certificate-data'
+        assert certification.certificate_filename == 'certificate.pdf'
+        certification_id = certification.id
+
+    certificate_response = client.get(f'/certification/{certification_id}/file')
+    assert certificate_response.status_code == 200
+    assert certificate_response.data == b'certificate-data'
+    assert certificate_response.mimetype == 'application/pdf'
 
 
 def test_add_event_expense_for_assigned_member_with_receipt():
@@ -335,8 +349,25 @@ def test_add_event_expense_for_assigned_member_with_receipt():
         assert expense.amount == Decimal('42.50')
         assert expense.approved_by_user_id != staff_id
         assert expense.status == 'Pending'
-        assert expense.receipt_image.endswith('.png')
+        assert expense.receipt_image is None
+        assert expense.receipt_data == b'image-data'
+        assert expense.receipt_filename == 'receipt.png'
         expense_id = expense.id
+
+    receipt_response = client.get(f'/expense/{expense_id}/receipt')
+    assert receipt_response.status_code == 200
+    assert receipt_response.data == b'image-data'
+    assert receipt_response.mimetype == 'image/png'
+
+    unselected_event_page = client.get(f'/member/{member_id}')
+    assert 'Expense Records:' not in unselected_event_page.get_data(as_text=True)
+    selected_event_page = client.get(f'/member/{member_id}?selected_event_id={event_id}')
+    selected_event_html = selected_event_page.get_data(as_text=True)
+    assert selected_event_page.status_code == 200
+    assert 'id="events-tab" data-bs-toggle="tab" data-bs-target="#events" type="button" role="tab">Events</button>' in selected_event_html
+    assert 'id="events" role="tabpanel" aria-labelledby="events-tab"' in selected_event_html
+    assert 'Expense Records: Training Day' in selected_event_html
+    assert 'Vehicle Fuel' in selected_event_html
 
     client.get('/logout')
     client.post('/login', data={'email': 'expense-staff@example.com', 'password': 'Password123!'})
