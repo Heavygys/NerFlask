@@ -275,6 +275,8 @@ def get_event_tides(event):
             headers=headers,
             timeout=10,
         )
+        if tide_response.status_code == 403 and event.date_from < date.today():
+            return None, "TideCheck historical tide data requires a paid plan. Choose today or a future event date, or upgrade the TideCheck plan."
         tide_response.raise_for_status()
         tide_data = tide_response.json()
     except (requests.RequestException, KeyError, ValueError):
@@ -291,7 +293,51 @@ def get_event_tides(event):
             continue
         extremes.append({"type": extreme.get("type", "").title(), "time": time, "height": height})
 
-    return {"station": station.get("name", "Nearest station"), "extremes": extremes}, None
+    daily_condition = next(
+        (condition for condition in tide_data.get("dailyConditions", []) if condition.get("date") == event.date_from.isoformat()),
+        None,
+    )
+    if not daily_condition and tide_data.get("dailyConditions"):
+        daily_condition = tide_data["dailyConditions"][0]
+
+    time_series = []
+    for reading in tide_data.get("timeSeries", []):
+        try:
+            time_series.append({
+                "time": reading["time"],
+                "height": float(reading["height"]),
+            })
+        except (KeyError, TypeError, ValueError):
+            continue
+
+    conditions = tide_data.get("conditions", {})
+    return {
+        "station": station.get("name", "Nearest station"),
+        "station_label": station.get("label"),
+        "station_distance_km": station.get("distanceKm"),
+        "station_latitude": station.get("lat"),
+        "station_longitude": station.get("lng"),
+        "datum": tide_data.get("datum", "LAT"),
+        "extremes": extremes,
+        "time_series": time_series,
+        "conditions": {
+            "sunrise": conditions.get("sunriseLocal"),
+            "sunset": conditions.get("sunsetLocal"),
+            "moon_phase": conditions.get("moonPhase"),
+            "moon_illumination": conditions.get("moonIllumination"),
+            "tidal_strength": conditions.get("tidalStrength"),
+            "spring_neap": conditions.get("springNeap"),
+        },
+        "daily_conditions": {
+            "sunrise": daily_condition.get("sunriseLocal") if daily_condition else None,
+            "sunset": daily_condition.get("sunsetLocal") if daily_condition else None,
+            "moon_phase": daily_condition.get("moonPhase") if daily_condition else None,
+            "moon_illumination": daily_condition.get("moonIllumination") if daily_condition else None,
+            "solunar_label": daily_condition.get("solunarLabel") if daily_condition else None,
+            "solunar_rating": daily_condition.get("solunarRating") if daily_condition else None,
+            "spring_neap": daily_condition.get("springNeap") if daily_condition else None,
+        },
+    }, None
 
 
 def refresh_event_tides(event):
@@ -1467,7 +1513,12 @@ def create_app():
 
             db.session.commit()
             flash("Event updated successfully.")
-            return redirect(url_for("events"))
+            return redirect(url_for(
+                "events",
+                month=event.date_from.month,
+                year=event.date_from.year,
+                selected_event_id=event.id,
+            ))
 
         return render_template(
             "edit_event.html",

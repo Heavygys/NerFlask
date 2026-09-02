@@ -237,6 +237,25 @@ body.dark-mode textarea::placeholder {
   border-radius: 6px;
 }
 
+.tide-chart {
+  display: block;
+  width: 100%;
+  height: 180px;
+  border: 1px solid var(--ner-border);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.tide-conditions dt,
+.tide-conditions dd {
+  margin-bottom: 0.35rem;
+}
+
+body.dark-mode .tide-chart {
+  background: #1d2430;
+  border-color: #2d3748;
+}
+
 .alert {
   border-radius: 12px;
   font-size: 1rem;

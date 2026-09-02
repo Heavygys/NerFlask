@@ -1,8 +1,8 @@
 import io
 import os
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 os.environ["NERFLASK_DATABASE_URI"] = "sqlite:///northern_exposure_test.db"
 
@@ -96,7 +96,8 @@ def test_event_month_navigator_links_to_calendar_months():
     assert 'June 2026' in html
     assert 'month=6&amp;year=2026' in html
     assert 'Summer Regatta' in html
-    assert 'Event Locations' in html
+    assert 'What3words' in html
+    assert 'Tides' in html
     assert '///filled.count.soap' in html
     assert 'data-w3w-url="https://what3words.com/filled.count.soap"' in html
     assert 'id="w3wLocationFrame"' in html
@@ -115,7 +116,7 @@ def test_event_month_navigator_links_to_calendar_months():
     assert 'name="date_from" value="2026-03-15"' in create_response.get_data(as_text=True)
 
     no_w3w_response = client.get('/events?month=6&year=2026&selected_event_id=2')
-    assert 'Tide Times' in no_w3w_response.get_data(as_text=True)
+    assert 'Tides' in no_w3w_response.get_data(as_text=True)
     assert 'id="w3wLocationFrame"' not in no_w3w_response.get_data(as_text=True)
 
 
@@ -193,7 +194,7 @@ def test_event_tides_are_cached_on_create_and_refresh_without_page_fetch():
 
     client = app.test_client()
     client.post('/login', data={'email': 'tides-admin@example.com', 'password': 'Password123!'})
-    cached_tides = {'station': 'Harbour', 'extremes': [{'type': 'High', 'time': '08:15', 'height': 3.2}]}
+    cached_tides = {'station': 'Harbour', 'station_label': 'Harbour, UK', 'station_distance_km': 2, 'datum': 'LAT', 'extremes': [{'type': 'High', 'time': '08:15', 'height': 3.2}], 'time_series': [{'time': '2026-07-14T00:00:00Z', 'height': 2.0}, {'time': '2026-07-14T00:15:00Z', 'height': 2.2}], 'conditions': {'tidal_strength': 'Moderate', 'spring_neap': 'Neap'}, 'daily_conditions': {'moon_phase': 'Waning Gibbous', 'moon_illumination': 73, 'solunar_label': 'Fair', 'solunar_rating': 2, 'spring_neap': 'Neap'}}
 
     with patch('app.get_event_tides', return_value=(cached_tides, None)) as fetch_tides:
         response = client.post('/events/new', data={
@@ -210,7 +211,7 @@ def test_event_tides_are_cached_on_create_and_refresh_without_page_fetch():
         assert event.tide_data == cached_tides
         event_id = event.id
 
-    refreshed_tides = {'station': 'Harbour', 'extremes': [{'type': 'Low', 'time': '14:40', 'height': 0.8}]}
+    refreshed_tides = {'station': 'Harbour', 'station_label': 'Harbour, UK', 'station_distance_km': 2, 'datum': 'LAT', 'extremes': [{'type': 'Low', 'time': '14:40', 'height': 0.8}], 'time_series': [{'time': '2026-07-15T00:00:00Z', 'height': 1.0}, {'time': '2026-07-15T00:15:00Z', 'height': 0.8}], 'conditions': {'tidal_strength': 'Moderate', 'spring_neap': 'Neap'}, 'daily_conditions': {'moon_phase': 'Waning Gibbous', 'moon_illumination': 73, 'solunar_label': 'Fair', 'solunar_rating': 2, 'spring_neap': 'Neap'}}
     with patch('app.get_event_tides', return_value=(refreshed_tides, None)) as fetch_tides:
         response = client.post(f'/event/{event_id}/edit', data={
             'name': 'Tide Training',
@@ -221,6 +222,9 @@ def test_event_tides_are_cached_on_create_and_refresh_without_page_fetch():
 
     assert response.status_code == 302
     assert fetch_tides.call_count == 1
+    assert f'selected_event_id={event_id}' in response.headers['Location']
+    assert 'month=7' in response.headers['Location']
+    assert 'year=2026' in response.headers['Location']
     with app.app_context():
         event = db.session.get(Event, event_id)
         assert event.tide_data == refreshed_tides
@@ -231,6 +235,22 @@ def test_event_tides_are_cached_on_create_and_refresh_without_page_fetch():
     assert response.status_code == 200
     assert 'Harbour' in response.get_data(as_text=True)
     assert '14:40' in response.get_data(as_text=True)
+    assert 'Tides' in response.get_data(as_text=True)
+    assert 'tide-chart' in response.get_data(as_text=True)
+    assert 'Daily Conditions' in response.get_data(as_text=True)
+    assert 'shown.bs.tab' in response.get_data(as_text=True)
+
+
+def test_historical_event_tides_explain_tidecheck_plan_requirement():
+    event = Event(name='Historical Tide Test', date_from=date.today().replace(day=1) - timedelta(days=1), latitude=51.5, longitude=-0.1)
+    station_response = Mock(status_code=200)
+    station_response.json.return_value = [{'id': 'station-id', 'name': 'Test Station'}]
+    tide_response = Mock(status_code=403)
+    with patch('app.requests.get', side_effect=[station_response, tide_response]):
+        tide_data, tide_error = get_event_tides(event)
+
+    assert tide_data is None
+    assert tide_error == 'TideCheck historical tide data requires a paid plan. Choose today or a future event date, or upgrade the TideCheck plan.'
 
 
 def test_signup_success_and_failure_messages():

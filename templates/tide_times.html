@@ -1,7 +1,11 @@
 <div class="tide-times-panel h-100">
-  <h3 class="h6 text-uppercase mb-1">Tide Times</h3>
   {% if tide_data %}
-    <p class="small text-muted mb-3">{{ selected_event.date_from.strftime('%d %B %Y') }} | {{ tide_data.station }}</p>
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3"><div><h3 class="h6 text-uppercase mb-1">{{ tide_data.station }}</h3><p class="small text-muted mb-0">{{ tide_data.station_label or 'Nearest tide station' }}{% if tide_data.station_distance_km is not none %} | {{ tide_data.station_distance_km }} km away{% endif %}</p></div><span class="badge text-bg-light border">{{ tide_data.datum or 'LAT' }}</span></div>
+    {% if tide_data.time_series and tide_data.time_series|length > 1 %}
+    <canvas class="tide-chart mb-3" data-tide-series='{{ tide_data.time_series|tojson }}' aria-label="Tide height chart" role="img"></canvas>
+    {% else %}
+    <p class="small text-muted mb-3">A tide-height chart will be available after this event's tide data is refreshed.</p>
+    {% endif %}
     {% if tide_data.extremes %}
       <div class="table-responsive">
         <table class="table table-sm mb-2">
@@ -16,6 +20,13 @@
     {% else %}
       <p class="small mb-2">No tide extremes are available for this date.</p>
     {% endif %}
+    <h4 class="h6 text-uppercase mt-3 mb-2">Daily Conditions</h4>
+    <dl class="row small mb-3 tide-conditions">
+      <dt class="col-6">Tidal strength</dt><dd class="col-6">{{ tide_data.conditions.tidal_strength or '—' }}</dd>
+      <dt class="col-6">Spring / neap</dt><dd class="col-6">{{ tide_data.daily_conditions.spring_neap or tide_data.conditions.spring_neap or '—' }}</dd>
+      <dt class="col-6">Moon</dt><dd class="col-6">{{ tide_data.daily_conditions.moon_phase or tide_data.conditions.moon_phase or '—' }}{% if tide_data.daily_conditions.moon_illumination is not none %} ({{ tide_data.daily_conditions.moon_illumination }}%){% endif %}</dd>
+      <dt class="col-6">Solunar</dt><dd class="col-6">{{ tide_data.daily_conditions.solunar_label or '—' }}{% if tide_data.daily_conditions.solunar_rating is not none %} ({{ tide_data.daily_conditions.solunar_rating }}/5){% endif %}</dd>
+    </dl>
     <p class="small text-muted mb-0">TideCheck predictions are for planning only and are not suitable for navigation.</p>
   {% else %}
     <p class="small mb-0">{{ tide_error }}</p>

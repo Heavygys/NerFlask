@@ -68,6 +68,34 @@
             </div>
           </div>
 
+          <div id="selectedEventLocations">
+          {% if selected_event %}
+            <section class="card border-0 shadow-sm mt-3">
+              <div class="card-body py-3">
+                <ul class="nav nav-tabs mb-3" role="tablist">
+                  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#eventWhat3words{{ selected_event.id }}" type="button">What3words</button></li>
+                  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#eventTides{{ selected_event.id }}" type="button">Tides</button></li>
+                </ul>
+                <div class="tab-content">
+                  <div class="tab-pane fade show active" id="eventWhat3words{{ selected_event.id }}">
+                    {% if selected_event_locations %}
+                      <div class="d-flex flex-wrap gap-2">
+                        {% for location in selected_event_locations %}
+                          <button type="button" class="btn btn-outline-primary btn-sm w3w-location-button {% if loop.first %}active{% endif %}" data-w3w-url="https://what3words.com/{{ location.address }}">///{{ location.address }}</button>
+                        {% endfor %}
+                      </div>
+                      <div class="w3w-viewer mt-3"><iframe id="w3wLocationFrame" title="What3words location" src="https://what3words.com/{{ selected_event_locations[0].address }}"></iframe></div>
+                    {% else %}
+                      <p class="text-muted mb-0">No What3words locations added.</p>
+                    {% endif %}
+                  </div>
+                  <div class="tab-pane fade" id="eventTides{{ selected_event.id }}">{% include 'tide_times.html' %}</div>
+                </div>
+              </div>
+            </section>
+          {% endif %}
+          </div>
+
         </div>
 
         <div class="col-xl-2">
@@ -183,36 +211,6 @@
         </div>
       </div>
 
-      <div id="selectedEventLocations">
-      {% if selected_event %}
-        <section class="card border-0 shadow-sm mt-3">
-          <div class="card-body py-3">
-            <h2 class="h6 text-uppercase mb-2">Event Locations</h2>
-            {% if selected_event_locations %}
-              <div class="d-flex flex-wrap gap-2">
-                {% for location in selected_event_locations %}
-                  <button type="button" class="btn btn-outline-primary btn-sm w3w-location-button {% if loop.first %}active{% endif %}" data-w3w-url="https://what3words.com/{{ location.address }}">
-                    ///{{ location.address }}
-                  </button>
-                {% endfor %}
-              </div>
-              <div class="row g-3 mt-1">
-                <div class="col-lg-8">
-                  <div class="w3w-viewer">
-                    <iframe id="w3wLocationFrame" title="What3words location" src="https://what3words.com/{{ selected_event_locations[0].address }}"></iframe>
-                  </div>
-                </div>
-                <div class="col-lg-4">{% include 'tide_times.html' %}</div>
-              </div>
-            {% else %}
-              <div class="row g-3">
-                <div class="col-12">{% include 'tide_times.html' %}</div>
-              </div>
-            {% endif %}
-          </div>
-        </section>
-      {% endif %}
-      </div>
     {% else %}
       <p class="text-muted mb-0">No events have been added yet.</p>
     {% endif %}
@@ -235,6 +233,56 @@
         document.querySelectorAll('.w3w-location-button').forEach((locationButton) => locationButton.classList.remove('active'));
         button.classList.add('active');
       });
+    });
+  }
+
+  function initializeTideCharts() {
+    document.querySelectorAll('.tide-chart').forEach((canvas) => {
+      const readings = JSON.parse(canvas.dataset.tideSeries || '[]');
+      if (readings.length < 2) {
+        return;
+      }
+      const context = canvas.getContext('2d');
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      if (!width || !height) {
+        return;
+      }
+      const scale = window.devicePixelRatio || 1;
+      canvas.width = width * scale;
+      canvas.height = height * scale;
+      context.scale(scale, scale);
+      const heights = readings.map((reading) => reading.height);
+      const minimum = Math.min(...heights);
+      const maximum = Math.max(...heights);
+      const range = maximum - minimum || 1;
+      const padding = 24;
+      const chartWidth = width - padding * 2;
+      const chartHeight = height - padding * 2;
+      const dark = document.body.classList.contains('dark-mode');
+      context.strokeStyle = dark ? '#8ec5ff' : '#123047';
+      context.lineWidth = 2;
+      context.beginPath();
+      readings.forEach((reading, index) => {
+        const x = padding + (index / (readings.length - 1)) * chartWidth;
+        const y = padding + (1 - (reading.height - minimum) / range) * chartHeight;
+        if (index === 0) context.moveTo(x, y); else context.lineTo(x, y);
+      });
+      context.stroke();
+      context.fillStyle = dark ? '#e9ecef' : '#152c3c';
+      context.font = '12px Trebuchet MS';
+      context.fillText(maximum.toFixed(2) + ' m', 2, padding + 4);
+      context.fillText(minimum.toFixed(2) + ' m', 2, height - padding + 4);
+    });
+  }
+
+  function initializeTideTabs() {
+    document.querySelectorAll('[data-bs-target^="#eventTides"]').forEach((button) => {
+      if (button.dataset.chartBound) {
+        return;
+      }
+      button.addEventListener('shown.bs.tab', initializeTideCharts);
+      button.dataset.chartBound = 'true';
     });
   }
 
@@ -263,6 +311,8 @@
     });
     window.history.replaceState({}, '', link.href);
     initializeWhat3wordsLocations();
+    initializeTideTabs();
+    initializeTideCharts();
   }
 
   async function selectEventMonth(event) {
@@ -283,7 +333,6 @@
     }
 
     document.getElementById('eventBrowser').replaceWith(newBrowser);
-    document.getElementById('selectedEventLocations').replaceWith(newLocations);
     window.history.replaceState({}, '', link.href);
     initializeEventBrowser();
   }
@@ -321,5 +370,7 @@
 
   initializeEventBrowser();
   initializeWhat3wordsLocations();
+  initializeTideTabs();
+  initializeTideCharts();
 </script>
 {% endblock %}
