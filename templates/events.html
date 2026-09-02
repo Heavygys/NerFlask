@@ -117,6 +117,7 @@
                 </ul>
               </div>
             {% endfor %}
+            <a href="{{ url_for('download_event_calendar', year=current_year) }}" class="btn btn-outline-primary btn-sm w-100 mt-2">Download {{ current_year }} iCalendar</a>
           </div>
         </div>
 

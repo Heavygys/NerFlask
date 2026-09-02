@@ -13,7 +13,7 @@ from urllib.parse import urlencode
 
 import requests
 from dotenv import load_dotenv
-from flask import Flask, abort, flash, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, Response, abort, flash, redirect, render_template, request, send_file, session, url_for
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import or_, text
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -342,6 +342,10 @@ def get_event_tides(event):
 
 def refresh_event_tides(event):
     event.tide_data, event.tide_error = get_event_tides(event)
+
+
+def escape_icalendar_text(value):
+    return value.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
 
 
 def ensure_member_for_user(user):
@@ -1153,6 +1157,8 @@ def create_app():
         for event in event_list:
             key = event.date_from.isoformat()
             events_by_date.setdefault(key, []).append(event)
+            if event.date_from.year != year:
+                continue
             month_key = (event.date_from.year, event.date_from.month)
             if not current_month_group or current_month_group["key"] != month_key:
                 current_month_group = {
@@ -1227,6 +1233,37 @@ def create_app():
             tide_error=tide_error,
             date_ref=date,
         )
+
+    @app.route("/events/calendar/<int:year>.ics")
+    @login_required
+    def download_event_calendar(year):
+        event_list = Event.query.filter(
+            Event.date_from >= date(year, 1, 1),
+            Event.date_from < date(year + 1, 1, 1),
+        ).order_by(Event.date_from, Event.name).all()
+        calendar_lines = [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "PRODID:-//Northern Exposure Rescue//Events//EN",
+            "CALSCALE:GREGORIAN",
+        ]
+        for event in event_list:
+            end_date = (event.date_to or event.date_from) + timedelta(days=1)
+            calendar_lines.extend([
+                "BEGIN:VEVENT",
+                f"UID:event-{event.id}@northern-exposure-rescue",
+                f"DTSTAMP:{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}",
+                f"DTSTART;VALUE=DATE:{event.date_from.strftime('%Y%m%d')}",
+                f"DTEND;VALUE=DATE:{end_date.strftime('%Y%m%d')}",
+                f"SUMMARY:{escape_icalendar_text(event.name)}",
+            ])
+            if event.notes:
+                calendar_lines.append(f"DESCRIPTION:{escape_icalendar_text(event.notes)}")
+            calendar_lines.append("END:VEVENT")
+        calendar_lines.append("END:VCALENDAR")
+        response = Response("\r\n".join(calendar_lines) + "\r\n", mimetype="text/calendar")
+        response.headers["Content-Disposition"] = f'attachment; filename="northern-exposure-events-{year}.ics"'
+        return response
 
     @app.route("/certifications/expired")
     @role_required("admin", "staff")

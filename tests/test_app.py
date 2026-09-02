@@ -94,6 +94,7 @@ def test_event_month_navigator_links_to_calendar_months():
     assert 'Event Months' in html
     assert 'March 2026' in html
     assert 'June 2026' in html
+    assert 'Download 2026 iCalendar' in html
     assert 'month=6&amp;year=2026' in html
     assert 'Summer Regatta' in html
     assert 'What3words' in html
@@ -114,6 +115,12 @@ def test_event_month_navigator_links_to_calendar_months():
     create_response = client.get('/events/new?date_from=2026-03-15')
     assert create_response.status_code == 200
     assert 'name="date_from" value="2026-03-15"' in create_response.get_data(as_text=True)
+
+    calendar_response = client.get('/events/calendar/2026.ics')
+    assert calendar_response.status_code == 200
+    assert calendar_response.mimetype == 'text/calendar'
+    assert 'BEGIN:VCALENDAR' in calendar_response.get_data(as_text=True)
+    assert 'SUMMARY:Spring Training' in calendar_response.get_data(as_text=True)
 
     no_w3w_response = client.get('/events?month=6&year=2026&selected_event_id=2')
     assert 'Tides' in no_w3w_response.get_data(as_text=True)
